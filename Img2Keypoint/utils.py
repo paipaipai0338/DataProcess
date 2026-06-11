@@ -436,7 +436,7 @@ def check_corners_order_minimal(bgr, corners, rows, cols):
     corners_ordered = best_grid.reshape(rows * cols, 1, 2).astype(np.float32)
     return True, corners_ordered, color_centers
 
-def get_gt_data(path: Path) -> np.ndarray:
+def get_gt_data(path: Path|str) -> np.ndarray:
     with open(path, 'rb') as ff:
         gt = pickle.load(ff)
     return gt

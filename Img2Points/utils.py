@@ -358,7 +358,7 @@ class ImagePixelPicker:
         plt.close(self.fig)
 
 
-def get_corner_pixel_from_img(img_path: Path, pkl_save_path: Path, expected_points: int = 3) -> dict:
+def get_corner_pixel_from_img(img_path: Path|str, pkl_save_path: Path|str, expected_points: int = 3) -> dict:
     """
     Pick corner pixels from images and save them to a pickle file.
 
@@ -502,12 +502,12 @@ def _calculate_corner_coordinate_robust(
 
 
 def get_corner_coordinate(
-    pkl_save_path: Path,
+    pkl_save_path: Path|str,
     calib_path: Path,
     min_rays: int = 2,
     max_ray_error: float = 0.05,
 ) -> Tuple[np.ndarray, dict]:
-    with open(str(pkl_save_path), 'rb') as f:
+    with open(pkl_save_path, 'rb') as f:
         data = pickle.load(f)
     coordinates = {}
     for k, vs in data.items():

@@ -767,7 +767,7 @@ def get_radar_res(
 
     return range_res, velocity_res, azi_angle_res_deg, ele_angle_res_deg
 
-def get_corner_data(file_path: Path, ref_range: int=6, ref_velocity: int=4, guard_range:int=4, guard_velocity: int=2, alpha: float=2.0, mode: str='so') -> Dict[str, np.ndarray]:
+def get_corner_data(file_path: Path|str, ref_range: int=6, ref_velocity: int=4, guard_range:int=4, guard_velocity: int=2, alpha: float=2.0, mode: str='so') -> Dict[str, np.ndarray]:
     radar_config = Radar_Config()
     # (256, 64, 16)
     data = bin_to_cube_range_fft(str(file_path), radar_config)  # 读取函数
@@ -866,3 +866,7 @@ def get_corner_data(file_path: Path, ref_range: int=6, ref_velocity: int=4, guar
     targets["polar coordinate"] = np.array(targets["polar coordinate"])
 
     return targets
+
+def get_pc_data(file_path: Path|str):
+    data = np.load(file_path)
+    return data

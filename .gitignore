@@ -17,13 +17,6 @@ env/
 *.tmp
 *.bak
 
-# Generated results and local datasets
-results/
-data/
-dataset/
-datasets/
-outputs/
-
 # Large model/data artifacts
 *.pth
 *.pt

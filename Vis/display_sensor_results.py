@@ -8,7 +8,8 @@ import open3d as o3d
 from TimeProcess.utils import timestamp_to_ms, align_multi_sensor_files
 from LidarProcess.utils import read_pcd
 from RealSenseProcess.utils import get_realsense_data
-from RadarProcess.utils import get_corner_data
+from RadarProcess.utils import get_corner_data, get_pc_data
+from Img2Keypoint.utils import get_gt_data
 
 def visualize_multi_sensor(data: dict, colors: dict, window_name="Multi-Sensor Visualization", window_size=(1280, 720), show_coord_frame=True, coord_frame_size=1.0):
     """
@@ -34,7 +35,7 @@ def visualize_multi_sensor(data: dict, colors: dict, window_name="Multi-Sensor V
     for name, points in data.items():
         if points is None or len(points) == 0:
             continue
-        # radar xyzv
+        # radar x,y,z,v,snr,type
         if points.shape[-1] != 3:
             points = points[..., :3]
         # gt num person, num joint, 3
@@ -76,18 +77,20 @@ def main():
         "alpha": 1.5,
         "mode": "ca",
     }
-    root_path = Path(r'E:\20260609_164905')
+    root_path = Path(r'E:\20260609_165004')
     calib_path = root_path / 'calib'
 
-    # img_to_radar_low_extrinsic = np.load(calib_path / 'extrinsic_img_to_radar_low.npz')
-    # img_to_radar_high_extrinsic = np.load(calib_path / 'extrinsic_img_to_radar_high.npz')
+    img_to_radar_low_extrinsic = np.load(calib_path / 'extrinsic_img_to_radar_low.npz')
+    img_to_radar_high_extrinsic = np.load(calib_path / 'extrinsic_img_to_radar_high.npz')
 
 
     radar_low_path = root_path / 'dpct低位机'
     radar_low_bin_path = radar_low_path / 'Bin'
+    radar_low_pc_path = radar_low_path / 'PC'
 
     radar_high_path = root_path / 'dpct高位机'
     radar_high_bin_path = radar_high_path / 'Bin'
+    radar_high_pc_path = radar_high_path / 'PC'
 
     lidar_path = root_path / 'robosense'
 
@@ -99,8 +102,10 @@ def main():
         'lidar': lidar_path,
         'radar_low_bin': radar_low_bin_path,
         'radar_high_bin': radar_high_bin_path,
-        # 'gt': gt_path,
-        # 'realsense': realsense_path,
+        'radar_low_pc': radar_low_pc_path,
+        'radar_high_pc': radar_high_pc_path,
+        'gt': gt_path,
+        'realsense': realsense_path,
     }
 
     # 自定义后缀（如果需要）
@@ -108,6 +113,8 @@ def main():
         'lidar': '.pcd',
         'radar_low_bin': '.bin',
         'radar_high_bin': '.bin',
+        'radar_low_pc': '.npy',
+        'radar_high_pc': '.npy',
         'gt': '.pkl',
         'realsense': '.bin',
     }
@@ -123,14 +130,16 @@ def main():
 
     lidar_files_matched = result.get('lidar')
     radar_low_bin_files_matched = result.get('radar_low_bin')
+    radar_low_pc_files_matched = result.get('radar_low_pc')
     radar_high_bin_files_matched = result.get('radar_high_bin')
-    # gt_files_matched = result.get('gt')
-    # realsense_files_matched = result.get('realsense')
+    radar_high_pc_files_matched = result.get('radar_high_pc')
+    gt_files_matched = result.get('gt')
+    realsense_files_matched = result.get('realsense')
 
     frames = len(lidar_files_matched)
 
     for frame_idx in range(frames):
-        lidar_pcd, pc_radar_low, pc_radar_high, gt, realsense_depth = [None] * 5
+        lidar_pcd, pc_from_bin_radar_low, pc_from_bin_radar_high, pc_radar_low, pc_radar_high, gt, realsense_depth = [None] * 7
         # ========== LiDAR ==========
         if lidar_files_matched[frame_idx]:
             lidar_pcd = read_pcd(lidar_files_matched[frame_idx])
@@ -140,50 +149,70 @@ def main():
         # ========== 低位雷达 ==========
         if radar_low_bin_files_matched[frame_idx]:
             targets_low = get_corner_data(Path(radar_low_bin_files_matched[frame_idx]), **radar_low_cfar_params)
-            pc_radar_low = targets_low["cartesian coordinate"]
+            pc_from_bin_radar_low = targets_low["cartesian coordinate"]
             radar_low_time_samp = Path(radar_low_bin_files_matched[frame_idx]).stem
             radar_low_time_ms = timestamp_to_ms(radar_low_time_samp)
-            print(f"Radar Low: {radar_low_time_ms}, Shape: {pc_radar_low.shape}")
+            print(f"Radar Bin Low: {radar_low_time_ms}, Shape: {pc_from_bin_radar_low.shape}")
+        if radar_low_pc_files_matched[frame_idx]:
+            pc_radar_low = get_pc_data(Path(radar_low_pc_files_matched[frame_idx]))
+            radar_low_time_samp = Path(radar_low_pc_files_matched[frame_idx]).stem
+            radar_low_time_ms = timestamp_to_ms(radar_low_time_samp)
+            print(f"Radar PC Low: {radar_low_time_ms}, Shape: {pc_radar_low.shape}")
         # ========== 高位雷达 ==========
         if radar_high_bin_files_matched[frame_idx]:
             targets_high = get_corner_data(Path(radar_high_bin_files_matched[frame_idx]), **radar_high_cfar_params)
-            pc_radar_high = targets_high["cartesian coordinate"]
+            pc_from_bin_radar_high = targets_high["cartesian coordinate"]
             radar_high_time_samp = Path(radar_high_bin_files_matched[frame_idx]).stem
             radar_high_time_ms = timestamp_to_ms(radar_high_time_samp)
-            print(f"Radar High: {radar_high_time_ms}, Shape: {pc_radar_high.shape}")
-        # # ========== GT ==========
-        # if gt_files_matched[frame_idx] is not None:
-        #     gt = get_gt_data(gt_files_matched[frame_idx])
-        #     gt_time_samp = Path(gt_files_matched[frame_idx]).stem
-        #     gt_time_ms = timestamp_to_ms(gt_time_samp)
-        #     print(f"GT: {gt_time_ms}, Shape: {gt.shape}")
-        #     num_person, num_joint, _ = gt.shape
-        #     # gt =(img_to_radar_low_extrinsic['R_est'] @ gt.reshape(-1, 3).T + img_to_radar_low_extrinsic['t_est'].reshape(-1, 1)).T
-        #     # gt = gt.reshape(num_person, num_joint, 3)
-        # # ========== RealSense ==========
-        # if realsense_files_matched[frame_idx] is not None:
-        #     realsense_depth = get_realsense_data(Path(realsense_files_matched[frame_idx]))
-        #     realsense_time_samp = Path(realsense_files_matched[frame_idx]).stem
-        #     realsense_time_ms = timestamp_to_ms(realsense_time_samp)
-        #     if realsense_depth is not None and len(realsense_depth) > 0:
-        #         # 过滤无效点（深度为 0 或无穷）
-        #         valid_mask = (realsense_depth[:, 2] > 0) & np.isfinite(realsense_depth[:, 2])
-        #         realsense_depth = realsense_depth[valid_mask]
-        #         print(f"Realsense: {realsense_time_ms}, Shape: {realsense_depth.shape}")
+            print(f"Radar High: {radar_high_time_ms}, Shape: {pc_from_bin_radar_high.shape}")
+            # TODO：坐标转换
+        if radar_high_pc_files_matched[frame_idx]:
+            pc_radar_high = get_pc_data(Path(radar_high_pc_files_matched[frame_idx]))
+            radar_high_time_samp = Path(radar_high_pc_files_matched[frame_idx]).stem
+            radar_high_time_ms = timestamp_to_ms(radar_high_time_samp)
+            print(f"Radar PC High: {radar_high_time_ms}, Shape: {pc_radar_high.shape}")
+            # TODO：坐标转换
+        # ========== GT ==========
+        if gt_files_matched[frame_idx] is not None:
+            gt = get_gt_data(gt_files_matched[frame_idx])
+            gt_time_samp = Path(gt_files_matched[frame_idx]).stem
+            gt_time_ms = timestamp_to_ms(gt_time_samp)
+            print(f"GT: {gt_time_ms}, Shape: {gt.shape}")
+            num_person, num_joint, _ = gt.shape
+            # TODO：坐标转换
+            # gt =(img_to_radar_low_extrinsic['R_est'] @ gt.reshape(-1, 3).T + img_to_radar_low_extrinsic['t_est'].reshape(-1, 1)).T
+            # gt = gt.reshape(num_person, num_joint, 3)
+        # ========== RealSense ==========
+        if realsense_files_matched[frame_idx] is not None:
+            realsense_depth = get_realsense_data(Path(realsense_files_matched[frame_idx]))
+            realsense_time_samp = Path(realsense_files_matched[frame_idx]).stem
+            realsense_time_ms = timestamp_to_ms(realsense_time_samp)
+            if realsense_depth is not None and len(realsense_depth) > 0:
+                # 过滤无效点（深度为 0 或无穷）
+                valid_mask = (realsense_depth[:, 2] > 0) & np.isfinite(realsense_depth[:, 2])
+                realsense_depth = realsense_depth[valid_mask]
+                print(f"Realsense: {realsense_time_ms}, Shape: {realsense_depth.shape}")
+            # TODO：坐标转换
 
         data_for_vis = {
             'lidar_pcd': lidar_pcd,
+            # 'pc_from_bin_radar_low': pc_from_bin_radar_low,
+            # 'pc_from_bin_radar_high': pc_from_bin_radar_high,
             'pc_radar_low': pc_radar_low,
             'pc_radar_high': pc_radar_high,
-            # 'gt': gt,
-            # 'realsense_depth' : realsense_depth,
+            'gt': gt,
+            'realsense_depth' : realsense_depth,
         }
 
         # 添加颜色和大小定义
         colors = {
             'lidar_pcd': [0.5, 0.5, 0.5],  # 灰色
-            'pc_radar_low': [1.0, 0.5, 0.0],  # 橙色
-            'pc_radar_high': [0.0, 0.0, 1.0],  # 蓝色
+            'pc_from_bin_radar_low': [1.0, 0.5, 0.0],  # 橙色
+            'pc_radar_low': [1.0, 0.75, 0.25],  # 浅橙色
+
+            'pc_from_bin_radar_high': [0.0, 0.0, 1.0],  # 蓝色
+            'pc_radar_high': [0.25, 0.55, 1.0],  # 浅蓝色
+
             'gt': [1.0, 0.0, 0.0],  # 红色
             'realsense_depth': [0.0, 1.0, 0.0],  # 绿色
         }

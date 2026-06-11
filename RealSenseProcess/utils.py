@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 
 
-def get_realsense_data(path: Path) -> np.ndarray:
+def get_realsense_data(path: Path|str) -> np.ndarray:
     raw = np.fromfile(path, dtype=np.float32)
     data = raw.reshape(-1, 3)
     xyz_new = np.zeros_like(data)

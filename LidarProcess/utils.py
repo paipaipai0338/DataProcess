@@ -1,7 +1,9 @@
+from pathlib import Path
+
 import numpy as np
 import open3d as o3d
 
-def read_pcd(file_path: str) -> np.ndarray:
+def read_pcd(file_path: Path|str) -> np.ndarray:
     """
     获取激光雷达 EM4 数据
     输入:
