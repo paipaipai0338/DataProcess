@@ -1,0 +1,35 @@
+# IDE and editor files
+.idea/
+.vscode/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+
+# Generated results and local datasets
+results/
+data/
+dataset/
+datasets/
+outputs/
+
+# Large model/data artifacts
+*.pth
+*.pt
+*.onnx
+*.ckpt
+*.bin
+*.pcd
+*.npz
+*.pkl
