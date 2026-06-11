@@ -1,10 +1,14 @@
 import os
 import pickle
+import sys
 from pathlib import Path
 
 import numpy as np
 import open3d as o3d
 
+from RadarProcess import lky as lky_module
+sys.modules.setdefault("lky", lky_module)
+from RadarProcess.lky_pointcloud_utils import generate_point_cloud_array_from_bin
 from TimeProcess.utils import timestamp_to_ms, align_multi_sensor_files
 from LidarProcess.utils import read_pcd
 from RealSenseProcess.utils import get_realsense_data
@@ -62,20 +66,35 @@ def visualize_multi_sensor(data: dict, colors: dict, window_name="Multi-Sensor V
 
 def main():
     radar_low_cfar_params = {
-        "ref_range": 10,
+        "ref_range": 12,
         "ref_velocity": 8,
-        "guard_range": 2,
+        "guard_range": 3,
         "guard_velocity": 2,
-        "alpha": 2.0,
-        "mode": "ca",
+        "alpha": 6.0,
+        "mode": "so",
     }
     radar_high_cfar_params = {
-        "ref_range": 8,
+        "ref_range": 12,
         "ref_velocity": 8,
-        "guard_range": 2,
+        "guard_range": 3,
         "guard_velocity": 2,
-        "alpha": 1.5,
-        "mode": "ca",
+        "alpha": 6.0,
+        "mode": "so",
+    }
+    radar_method2_params = {
+        "branch": "dbf_first",
+        "output_format": "xyz",
+        "mti": "none",
+        "cfar_mul_fac": 16.0,
+        "expert_cfar_mul_fac": 16.0,
+        "cfar_search_size": 10,
+        "cfar_guard_size": 6,
+        "expert_cfar_search_size": 10,
+        "expert_cfar_guard_size": 6,
+        "min_valid_range_bin": 8,
+        "max_targets": 3000,
+        "dbf_az_snr_gate_enable": True,
+        "dbf_az_snr_threshold": 10.0,
     }
     root_path = Path(r'E:\20260609_165004')
     calib_path = root_path / 'calib'
@@ -139,7 +158,18 @@ def main():
     frames = len(lidar_files_matched)
 
     for frame_idx in range(frames):
-        lidar_pcd, pc_from_bin_radar_low, pc_from_bin_radar_high, pc_radar_low, pc_radar_high, gt, realsense_depth = [None] * 7
+        print('*' * 50, f'frame: {frame_idx}', '*' * 50)
+        (
+            lidar_pcd,
+            pc_from_bin_radar_low_method1,
+            pc_from_bin_radar_low_method2,
+            pc_from_bin_radar_high_method1,
+            pc_from_bin_radar_high_method2,
+            pc_radar_low,
+            pc_radar_high,
+            gt,
+            realsense_depth,
+        ) = [None] * 9
         # ========== LiDAR ==========
         if lidar_files_matched[frame_idx]:
             lidar_pcd = read_pcd(lidar_files_matched[frame_idx])
@@ -148,11 +178,19 @@ def main():
             print(f"LiDAR: {lidar_time_ms}, Shape: {lidar_pcd.shape}")
         # ========== 低位雷达 ==========
         if radar_low_bin_files_matched[frame_idx]:
+            '''信号处理方式1'''
             targets_low = get_corner_data(Path(radar_low_bin_files_matched[frame_idx]), **radar_low_cfar_params)
-            pc_from_bin_radar_low = targets_low["cartesian coordinate"]
+            pc_from_bin_radar_low_method1 = targets_low["cartesian coordinate"]
+            '''信号处理方式2'''
+            pc_from_bin_radar_low_method2 = generate_point_cloud_array_from_bin(
+                str(radar_low_bin_files_matched[frame_idx]),
+                **radar_method2_params,
+            )
+
             radar_low_time_samp = Path(radar_low_bin_files_matched[frame_idx]).stem
             radar_low_time_ms = timestamp_to_ms(radar_low_time_samp)
-            print(f"Radar Bin Low: {radar_low_time_ms}, Shape: {pc_from_bin_radar_low.shape}")
+            print(f"Radar Bin Low Method1: {radar_low_time_ms}, Shape: {pc_from_bin_radar_low_method1.shape}")
+            print(f"Radar Bin Low Method2: {radar_low_time_ms}, Shape: {pc_from_bin_radar_low_method2.shape}")
         if radar_low_pc_files_matched[frame_idx]:
             pc_radar_low = get_pc_data(Path(radar_low_pc_files_matched[frame_idx]))
             radar_low_time_samp = Path(radar_low_pc_files_matched[frame_idx]).stem
@@ -161,10 +199,15 @@ def main():
         # ========== 高位雷达 ==========
         if radar_high_bin_files_matched[frame_idx]:
             targets_high = get_corner_data(Path(radar_high_bin_files_matched[frame_idx]), **radar_high_cfar_params)
-            pc_from_bin_radar_high = targets_high["cartesian coordinate"]
+            pc_from_bin_radar_high_method1 = targets_high["cartesian coordinate"]
+            pc_from_bin_radar_high_method2 = generate_point_cloud_array_from_bin(
+                str(radar_high_bin_files_matched[frame_idx]),
+                **radar_method2_params,
+            )
             radar_high_time_samp = Path(radar_high_bin_files_matched[frame_idx]).stem
             radar_high_time_ms = timestamp_to_ms(radar_high_time_samp)
-            print(f"Radar High: {radar_high_time_ms}, Shape: {pc_from_bin_radar_high.shape}")
+            print(f"Radar Bin High Method1: {radar_high_time_ms}, Shape: {pc_from_bin_radar_high_method1.shape}")
+            print(f"Radar Bin High Method2: {radar_high_time_ms}, Shape: {pc_from_bin_radar_high_method2.shape}")
             # TODO：坐标转换
         if radar_high_pc_files_matched[frame_idx]:
             pc_radar_high = get_pc_data(Path(radar_high_pc_files_matched[frame_idx]))
@@ -196,8 +239,8 @@ def main():
 
         data_for_vis = {
             'lidar_pcd': lidar_pcd,
-            # 'pc_from_bin_radar_low': pc_from_bin_radar_low,
-            # 'pc_from_bin_radar_high': pc_from_bin_radar_high,
+            'pc_from_bin_radar_low': pc_from_bin_radar_low_method2,     # pc_from_bin_radar_low_method2
+            'pc_from_bin_radar_high': pc_from_bin_radar_high_method2,   # pc_from_bin_radar_high_method2
             'pc_radar_low': pc_radar_low,
             'pc_radar_high': pc_radar_high,
             'gt': gt,

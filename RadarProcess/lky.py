@@ -100,6 +100,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -1228,7 +1229,7 @@ def point_table_to_array(point_table: Dict[str, np.ndarray]) -> np.ndarray:
 
 
 def generate_point_cloud_from_bin(
-    bin_file: str,
+    bin_file: Path|str,
     branch: str = "dbf_first",
     common_cfg: Optional[CommonConfig] = None,
     proc_cfg: Optional[ProcessConfig] = None,
@@ -1262,6 +1263,7 @@ def generate_point_cloud_from_bin(
               optionally "radar_data" and "fft_cube"
             }
     """
+    bin_file = str(bin_file)
     if common_cfg is None:
         common_cfg = CommonConfig()
     if proc_cfg is None:
