@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from typing import *
-from datetime import datetime
+from datetime import datetime, timedelta
 
 def timestamp_to_ms(ts_str):
     parts = ts_str.split('_')
@@ -228,7 +228,8 @@ def align_multi_sensor_files(
     max_delta_sec: Optional[float] = None,
     one_to_one: bool = True,
     base_source: Optional[str] = None,
-    suffix_map: Optional[Dict[str, str]] = None
+    suffix_map: Optional[Dict[str, str]] = None,
+    time_offsets_sec: Optional[Dict[str, float]] = None
 ) -> Dict[str, List[Optional[str]]]:
     """
     多传感器文件时间戳对齐
@@ -306,6 +307,9 @@ def align_multi_sensor_files(
     for name, path in sources.items():
         suffix = suffix_map.get(name, get_default_suffix(name)) if suffix_map else get_default_suffix(name)
         files, times = list_files(path, suffix)
+        if time_offsets_sec and name in time_offsets_sec:
+            offset = timedelta(seconds=float(time_offsets_sec[name]))
+            times = [t + offset for t in times]
         if files:  # 只保留非空的传感器
             sensor_data[name] = {
                 'path': path,

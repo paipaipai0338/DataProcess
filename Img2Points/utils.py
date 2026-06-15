@@ -358,7 +358,7 @@ class ImagePixelPicker:
         plt.close(self.fig)
 
 
-def get_corner_pixel_from_img(img_path: Path|str, pkl_save_path: Path|str, expected_points: int = 3) -> dict:
+def get_corner_pixel_from_img(img_path: Path|str, pkl_save_path: Path|str, expected_points: int = 4) -> dict:
     """
     Pick corner pixels from images and save them to a pickle file.
 
@@ -524,7 +524,7 @@ def get_corner_coordinate(
                 ray = build_ray_from_pixel(v[idx][0], v[idx][1], K, dist, camera_id=cam_id, pixel_id=idx, score=1 , frame_id=-1, person_id=-1, valid=True)
                 rays.append(ray)
 
-    pixel_ids = [0, 1, 2]
+    pixel_ids = [0, 1, 2, 3]
     coordinates = []
     error = {}
     cam_pos = {}

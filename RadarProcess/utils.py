@@ -99,7 +99,7 @@ def bin_to_cube(file_name: str, radar_config: Radar_Config) -> Optional[np.ndarr
     adc_data = np.transpose(B, (0, 2, 1))
     return adc_data
 
-def bin_to_cube_range_fft(file_name: str, radar_config: Radar_Config) -> Optional[np.ndarray]:
+def bin_to_cube_range_fft(file_name: Path|str, radar_config: Radar_Config) -> Optional[np.ndarray]:
     """
     读取保存的 1D-FFT 数据 raw_data.bin 转换为 adc_data_range_FFT: (num_samp, num_chirp, num_ant)
 

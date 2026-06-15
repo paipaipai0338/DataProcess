@@ -6,22 +6,7 @@ import numpy as np
 from Img2Points.utils import get_corner_coordinate, get_corner_pixel_from_img
 from RadarProcess.utils import get_corner_data
 from Img2Keypoint.utils import get_gt_data
-
-
-def as_xyz(points, name):
-    """Return finite XYZ columns and their original row indices."""
-    points = np.asarray(points, dtype=float)
-    if points.ndim != 2 or points.shape[1] < 3:
-        raise ValueError(f"{name} must be an Nx3 or NxM array, got shape {points.shape}")
-
-    xyz = points[:, :3]
-    valid_mask = np.isfinite(xyz).all(axis=1)
-    if not np.any(valid_mask):
-        raise ValueError(f"{name} does not contain finite XYZ points")
-    if not np.all(valid_mask):
-        print(f"Warning: ignored {np.size(valid_mask) - int(np.sum(valid_mask))} invalid rows in {name}")
-
-    return xyz[valid_mask], np.flatnonzero(valid_mask)
+from Calib.utils import *
 
 
 def estimate_transform(points_src, points_dst):
@@ -56,11 +41,6 @@ def estimate_transform(points_src, points_dst):
     t = centroid_dst - R @ centroid_src
 
     return R, t
-
-
-def apply_transform(points_src, R, t):
-    points_src, _ = as_xyz(points_src, "points_src")
-    return (R @ points_src.T + t.reshape(-1, 1)).T
 
 
 def pairwise_distances(points_a, points_b):
@@ -361,24 +341,27 @@ def plot_registration(points_src, points_dst, R, t, result):
 
 
 def main():
-    distance_threshold = 0.2  # meters; increase if radar detections are noisier
+    root_path = Path(r'E:\data_collection\group_000')
+    distance_threshold = 0.05  # meters; increase if radar detections are noisier
     radar_cfar_params = {
         "ref_range": 8,
-        "ref_velocity": 2,
-        "guard_range": 2,
-        "guard_velocity": 1,
-        "alpha": 2.0,
+        "ref_velocity": 8,
+        "guard_range": 4,
+        "guard_velocity": 2,
+        "alpha": 10.0,
         "mode": "ca",
     }
-    radar_path = Path(r'E:\20260609_164905\dpct低位机\Bin')
+    radar_path = root_path / 'dpct高位机\Bin'
 
-    img_path = Path(r'E:\20260609_164905\camera')
-    pkl_save_path = Path(r'E:\20260609_164905\calib\corner_pixels.pkl')
-    calib_path = Path(r'E:\20260609_164905\calib')
-    R_t_save_path = Path(r'E:\20260609_164905\calib\extrinsic_img_to_radar_low.npz')
+    img_path = root_path / 'camera'
+    calib_path = root_path / 'calib'
+
+    pkl_save_path = calib_path / 'corner_pixels.pkl'
+
+    R_t_save_path = calib_path / 'extrinsic_img_to_radar_high.npz'
 
     '''人工标注像素点'''
-    get_corner_pixel_from_img(img_path, pkl_save_path)
+    get_corner_pixel_from_img(img_path, pkl_save_path, expected_points=4)
 
     '''根据像素点重建3D坐标'''
     pixel_coordinate, error = get_corner_coordinate(pkl_save_path, calib_path=calib_path)
@@ -408,7 +391,7 @@ def main():
         pixel_coordinate,
         pc_radar,
         distance_threshold=distance_threshold,
-        min_matched_points=3,
+        min_matched_points=4,
     )
     print(f"\n匹配结果: {registration['radar_indices_by_source']}")
     print(f"种子角点索引: {registration['seed_source_indices']}")

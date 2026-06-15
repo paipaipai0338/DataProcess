@@ -27,62 +27,42 @@ def str2bool(v):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--root_path', type=Path, default=Path(r"E:\20260609"), help="本次采集或标定的数据根目录。其余路径默认由该目录自动派生。")
-    parser.add_argument('--calib_path', type=Path, default=None, help="相机标定数据所在目录，默认使用 root_path/calib。")
-    parser.add_argument('--reference_cam', type=str, default="A", help="用于统一坐标系和参考匹配的相机编号。")
-    parser.add_argument('--result_2D_data_path', type=Path, default=None, help="2D 关键点检测结果所在目录，默认使用 root_path/results/2D/human_group。")
-    parser.add_argument('--result_3D_data_path', type=Path, default=None, help="重建后的 3D 关键点结果保存目录，默认使用 root_path/results/3D/human_group。")
+    parser.add_argument('--root_path', type=Path, default=Path(r"E:\data_collection\group_003"), help="dataset root")
+    parser.add_argument('--calib_path', type=Path, default=None, help="calibration directory, default: root_path/calib")
+    parser.add_argument('--reference_cam', type=str, default="A", help="reference camera id")
+    parser.add_argument('--result_2D_data_path', type=Path, default=None, help="2D result directory, default: root_path/camera results/2D")
+    parser.add_argument('--result_3D_data_path', type=Path, default=None, help="3D output directory, default: root_path/camera results/3D")
 
-    parser.add_argument('--matching_mode', type=str, default="ref_guided", choices=["exhaustive", "ref_guided"], help="多相机人体匹配模式，exhaustive 为穷举匹配，ref_guided 为参考相机引导匹配。")
-    parser.add_argument('--pairwise_top_k', type=int, default=1, help="每个相机对保留的候选匹配数量。")
-    parser.add_argument('--min_support_cams', type=int, default=3, help="最终候选人体至少需要支持的相机数量。")
-    parser.add_argument('--max_missing_cams', type=int, default=4, help="构建候选时允许缺失观测的最大相机数量。")
-    parser.add_argument('--pairwise_none_error_m', type=float, default=0.10,
-                        help='当参考相机与目标相机的最佳成对射线误差超过该阈值时，为目标相机加入空候选；设为小于等于 0 可关闭该规则。')
-    parser.add_argument('--pairwise_candidate_error_m', type=float, default=0.20,
-                        help='构建组合前丢弃射线误差超过该阈值的非空成对候选；设为小于等于 0 可关闭该过滤。')
-    parser.add_argument('--max_candidate_ray_error_m', type=float, default=0.10,
-                        help='丢弃平均射线到点距离大于该阈值的最终多视角候选。')
-    parser.add_argument('--strict_two_cam_ray_error_m', type=float, default=0.05,
-                        help='两相机候选使用的更严格射线误差阈值；设为小于等于 0 可关闭该规则。')
-    parser.add_argument('--min_candidate_valid_joints', type=int, default=5,
-                        help='丢弃有效重建 3D 关节点数量少于该值的最终候选。')
-    parser.add_argument('--support_aware_sort', type=str2bool, default=True,
-                        help='是否优先按支持相机数量排序，再按射线误差排序，用于避免弱两相机候选仅因自洽而被选中。')
-    parser.add_argument('--use_2d_scores', type=str2bool, default=True, help="是否在匹配和重建过程中使用 2D 关键点置信度。")
-    parser.add_argument('--verbose_every', type=int, default=100, help="处理时每隔多少帧输出一次进度信息。")
-    parser.add_argument('--debug_vis', type=str2bool, default=False,
-                        help='是否启用原始串行调试可视化流程；设为 false 时使用非可视化并行批处理。')
-    parser.add_argument('--num_workers', type=int, default=4,
-                        help='非调试并行处理使用的工作进程数量，仅在 debug_vis 为 false 时生效。')
-    parser.add_argument('--parallel_chunksize', type=int, default=8,
-                        help='非调试进程池映射时每个任务块包含的帧数。')
-    parser.add_argument('--show_final_vis', type=str2bool, default=False,
-                        help='是否在保存所有帧后运行最终 3D 可视化。')
-    parser.add_argument('--process_all_groups', type=str2bool, default=True,
-                        help='是否处理从 result_2D_data_path 推断出的所有分组，而不是只处理单个分组。')
-    parser.add_argument('--skip_existing', type=str2bool, default=False,
-                        help='当目标 3D pkl 文件已存在时是否跳过对应帧。')
+    parser.add_argument('--matching_mode', type=str, default="ref_guided", choices=["exhaustive", "ref_guided"], help="multi-camera matching mode")
+    parser.add_argument('--pairwise_top_k', type=int, default=1, help="pairwise candidates kept for each camera pair")
+    parser.add_argument('--min_support_cams', type=int, default=3, help="minimum supporting cameras for a person candidate")
+    parser.add_argument('--max_missing_cams', type=int, default=4, help="maximum missing cameras allowed while building candidates")
+    parser.add_argument('--pairwise_none_error_m', type=float, default=0.10, help="ray error threshold for adding empty pairwise candidates")
+    parser.add_argument('--pairwise_candidate_error_m', type=float, default=0.20, help="ray error threshold for pairwise candidates")
+    parser.add_argument('--max_candidate_ray_error_m', type=float, default=0.10, help="maximum average ray error for final candidates")
+    parser.add_argument('--strict_two_cam_ray_error_m', type=float, default=0.05, help="strict ray error threshold for two-camera candidates")
+    parser.add_argument('--min_candidate_valid_joints', type=int, default=5, help="minimum valid reconstructed joints for final candidates")
+    parser.add_argument('--support_aware_sort', type=str2bool, default=True, help="sort candidates by camera support before ray error")
+    parser.add_argument('--use_2d_scores', type=str2bool, default=True, help="use 2D keypoint scores during matching and reconstruction")
+    parser.add_argument('--verbose_every', type=int, default=100, help="progress print interval")
+
+    parser.add_argument('--num_workers', type=int, default=4, help="number of worker processes")
+    parser.add_argument('--parallel_chunksize', type=int, default=8, help="chunksize for process-pool map")
+    parser.add_argument('--show_final_vis', type=str2bool, default=False, help="show final 3D visualization after saving")
+    parser.add_argument('--skip_existing', type=str2bool, default=False, help="skip frames whose 3D pkl already exists")
     args = parser.parse_args()
     if args.root_path is None and any(
         p is None
         for p in (
             args.calib_path,
-            args.chessboard_img_data_path,
-            args.human_img_data_path,
             args.result_2D_data_path,
             args.result_3D_data_path,
         )
     ):
-        parser.error("请指定 --root_path，或同时指定所有输入输出目录参数。")
+        parser.error("Specify --root_path, or provide all input/output paths.")
     args.calib_path = args.calib_path or args.root_path / "calib"
-    args.chessboard_img_data_path = (
-        args.chessboard_img_data_path
-        or args.root_path / "chessboard" / "extrinsic" / "val" / args.chessboard_group
-    )
-    args.human_img_data_path = args.human_img_data_path or args.root_path / "human" / args.human_group
-    args.result_2D_data_path = args.result_2D_data_path or args.root_path / "results" / "2D" / args.human_group
-    args.result_3D_data_path = args.result_3D_data_path or args.root_path / "results" / "3D" / args.human_group
+    args.result_2D_data_path = args.result_2D_data_path or args.root_path / "camera results" / "2D"
+    args.result_3D_data_path = args.result_3D_data_path or args.root_path / "camera results" / "3D"
     return args
 
 
@@ -2361,8 +2341,8 @@ def vis_results_3D(path, pos_world, cams=["A", "B", "C", "D", "E", "F", "G", "H"
     ax = plt.subplot(111, projection='3d')
     plt.ioff()
     for f in files:
-        with open(path + "/" + f, "rb") as f:
-            data = pickle.load(f)
+        with open(path / f, "rb") as file:
+            data = pickle.load(file)
         plt.cla()
         for cam in cams:
             ax.scatter(pos_world[cam][0], pos_world[cam][1], pos_world[cam][2], c='r', s=5)
@@ -2425,6 +2405,14 @@ def infer_group_jobs(human_img_data_path, result_2D_data_path, result_3D_data_pa
     human_img_data_path = Path(human_img_data_path)
     result_2D_data_path = Path(result_2D_data_path)
     result_3D_data_path = Path(result_3D_data_path)
+
+    if has_camera_result_dirs(human_img_data_path) and has_camera_result_dirs(result_2D_data_path):
+        return [(
+            result_2D_data_path.name,
+            human_img_data_path,
+            result_2D_data_path,
+            result_3D_data_path,
+        )]
 
     if has_camera_result_dirs(result_2D_data_path):
         result_2d_base = result_2D_data_path.parent
@@ -2568,182 +2556,46 @@ if __name__ == '__main__':
     args = parse_args()
     os.makedirs(args.result_3D_data_path, exist_ok=True)
     person_color = ['red', 'blue', 'green', 'orange', 'purple']
-    chessboard_img_data_path = Path(args.chessboard_img_data_path)
-    human_img_data_path = Path(args.human_img_data_path)
+    human_img_data_path = args.root_path / "camera"
     result_2D_data_path = Path(args.result_2D_data_path)
+    result_3D_data_path = Path(args.result_3D_data_path)
     all_cams = ["A", "B", "C", "D", "E", "F", "G", "H"]
     intrinsic_cache = load_intrinsic_cache(all_cams, args.calib_path)
     extrinsic_cache = load_extrinsic_cache(all_cams, args.reference_cam, args.calib_path)
 
     pos, dir = build_camera_relative_position(cams=all_cams, reference_cam=args.reference_cam, calib_path=args.calib_path)
+    R_ref_to_world = np.eye(3, dtype=np.float64)
+    world_origin_ref = np.zeros(3, dtype=np.float64)
+    pos_world = {cam: R_ref_to_world @ (pos[cam] - world_origin_ref) for cam in pos.keys()}
 
-    ''' 用地面标定板建立 world 坐标系 '''
-    chessboard_ray, pixels_id = get_chessboard_ray(
-        chessboard_img_data_path,
-        calib_path=args.calib_path,
-    )
+    group_jobs = infer_group_jobs(human_img_data_path, result_2D_data_path, result_3D_data_path)
+    print(f"[all_groups] found {len(group_jobs)} groups from result_2D_data_dir={result_2D_data_path}")
 
-    chessboard_points_ref = []
-    for pixel_id in sorted(pixels_id):
-        coordinate_3d, _ = calculate_chessboard_3D_coordinate(
-            pixel_id=pixel_id,
-            rays=chessboard_ray,
-            frame_id=-1,
-            person_id=-1,
-            reference_cam=args.reference_cam,
-            calib_path=args.calib_path,
+    total_done = 0
+    total_skipped = 0
+    workers = max(1, int(args.num_workers))
+    chunksize = max(1, int(args.parallel_chunksize))
+
+    for group_name, human_group_path, result_2d_group_path, result_3d_group_path in group_jobs:
+        os.makedirs(result_3d_group_path, exist_ok=True)
+        synchronized_groups = get_matched_pairs(human_group_path)
+        frame_items, skipped = collect_missing_frame_items(
+            synchronized_groups,
+            result_3d_group_path,
+            skip_existing=args.skip_existing,
         )
-        if np.all(np.isfinite(coordinate_3d)):
-            chessboard_points_ref.append(coordinate_3d)
+        total_skipped += skipped
+        print(
+            f"[all_groups] group={group_name} "
+            f"total={len(synchronized_groups)} todo={len(frame_items)} skipped={skipped}"
+        )
+        if len(frame_items) == 0:
+            continue
 
-    chessboard_points_ref = np.asarray(chessboard_points_ref, dtype=np.float64)
-
-    # ---------- 1) 拟合标定板平面 ----------
-    board_center_ref = np.mean(chessboard_points_ref, axis=0)
-    X0 = chessboard_points_ref - board_center_ref
-    _, _, vh = np.linalg.svd(X0, full_matrices=False)
-    plane_normal_ref = vh[-1]
-    plane_normal_ref = plane_normal_ref / (np.linalg.norm(plane_normal_ref) + 1e-12)
-
-    # 法向方向统一一下：希望 world z 朝“上”
-    # 在 OpenCV 相机系里 y 向下，所以“向上”通常更接近 -y
-    if plane_normal_ref[1] > 0:
-        plane_normal_ref = -plane_normal_ref
-
-    # ---------- 2) 取棋盘一条边作为 world x ----------
-    # 注意：这里假设 pixel_id 排序后，相邻点里至少前两个是同一行相邻角点
-    # 对你当前 24x24 棋盘通常成立
-    x_axis_ref = chessboard_points_ref[1] - chessboard_points_ref[0]
-    x_axis_ref = x_axis_ref - np.dot(x_axis_ref, plane_normal_ref) * plane_normal_ref
-    x_axis_ref = x_axis_ref / (np.linalg.norm(x_axis_ref) + 1e-12)
-
-    # ---------- 3) 补 world y ----------
-    y_axis_ref = np.cross(plane_normal_ref, x_axis_ref)
-    y_axis_ref = y_axis_ref / (np.linalg.norm(y_axis_ref) + 1e-12)
-
-    # 再正交一次，避免数值误差
-    x_axis_ref = np.cross(y_axis_ref, plane_normal_ref)
-    x_axis_ref = x_axis_ref / (np.linalg.norm(x_axis_ref) + 1e-12)
-
-    z_axis_ref = plane_normal_ref
-
-    # ---------- 4) ref_cam -> world 旋转矩阵 ----------
-    # 行向量写法：X_world = R @ (X_ref - origin)
-    # R_ref_to_world = np.stack([
-    #     x_axis_ref,
-    #     y_axis_ref,
-    #     z_axis_ref
-    # ], axis=0)
-
-    R_ref_to_world = np.eye(3)
-
-    # ---------- 5) world 原点 ----------
-    # 方案A：用棋盘中心
-    # world_origin_ref = board_center_ref
-    world_origin_ref = np.zeros_like(board_center_ref)
-
-    # 如果你更想用棋盘某个角点当原点，可以改成：
-    # world_origin_ref = chessboard_points_ref[0]
-
-    # ---------- 6) 把相机位置也转到 world ----------
-    pos_world = {}
-    for cam in pos.keys():
-        pos_world[cam] = R_ref_to_world @ (pos[cam] - world_origin_ref)
-
-    print("world origin (in ref cam):", world_origin_ref)
-    print("world axes in ref cam:")
-    print("x_axis_ref =", x_axis_ref)
-    print("y_axis_ref =", y_axis_ref)
-    print("z_axis_ref =", z_axis_ref)
-
-    '''保存人体结果'''
-    if args.process_all_groups:
-        group_jobs = infer_group_jobs(human_img_data_path, result_2D_data_path, Path(args.result_3D_data_path))
-        print(f"[all_groups] found {len(group_jobs)} groups from result_2D_data_dir={result_2D_data_path}")
-
-        total_done = 0
-        total_skipped = 0
-        for group_name, human_group_path, result_2d_group_path, result_3d_group_path in group_jobs:
-            os.makedirs(result_3d_group_path, exist_ok=True)
-            synchronized_groups = get_matched_pairs(human_group_path)
-            frame_items, skipped = collect_missing_frame_items(
-                synchronized_groups,
-                result_3d_group_path,
-                skip_existing=args.skip_existing,
-            )
-            total_skipped += skipped
-            print(
-                f"[all_groups] group={group_name} "
-                f"total={len(synchronized_groups)} todo={len(frame_items)} skipped={skipped}"
-            )
-            if len(frame_items) == 0:
-                continue
-
-            worker_cfg = {
-                "all_cams": all_cams,
-                "result_2D_data_path": result_2d_group_path,
-                "result_3D_data_path": str(result_3d_group_path),
-                "intrinsic_cache": intrinsic_cache,
-                "extrinsic_cache": extrinsic_cache,
-                "reference_cam": args.reference_cam,
-                "calib_path": args.calib_path,
-                "matching_mode": args.matching_mode,
-                "pairwise_top_k": args.pairwise_top_k,
-                "min_support_cams": args.min_support_cams,
-                "max_missing_cams": args.max_missing_cams,
-                "pairwise_none_error_m": args.pairwise_none_error_m,
-                "pairwise_candidate_error_m": args.pairwise_candidate_error_m,
-                "max_candidate_ray_error_m": args.max_candidate_ray_error_m,
-                "strict_two_cam_ray_error_m": args.strict_two_cam_ray_error_m,
-                "min_candidate_valid_joints": args.min_candidate_valid_joints,
-                "support_aware_sort": args.support_aware_sort,
-                "use_2d_scores": args.use_2d_scores,
-                "verbose_every": args.verbose_every,
-                "R_ref_to_world": R_ref_to_world,
-                "world_origin_ref": world_origin_ref,
-                "skip_existing": args.skip_existing,
-            }
-
-            workers = max(1, int(args.num_workers))
-            if (not args.debug_vis) and workers > 1:
-                chunksize = max(1, int(args.parallel_chunksize))
-                with ProcessPoolExecutor(
-                    max_workers=workers,
-                    initializer=init_frame_worker,
-                    initargs=(worker_cfg,),
-                ) as executor:
-                    results = executor.map(
-                        reconstruct_and_save_frame_no_debug_global,
-                        frame_items,
-                        chunksize=chunksize,
-                    )
-                    for result in tqdm(results, total=len(frame_items), desc=f"Group {group_name} x{workers}"):
-                        if not result.get("skipped", False):
-                            total_done += 1
-            else:
-                for frame_item in tqdm(frame_items, total=len(frame_items), desc=f"Group {group_name}"):
-                    result = reconstruct_and_save_frame_no_debug(frame_item, worker_cfg)
-                    if not result.get("skipped", False):
-                        total_done += 1
-
-        print(f"[all_groups] done={total_done} skipped={total_skipped}")
-        if args.show_final_vis and len(group_jobs) > 0:
-            vis_results_3D(str(group_jobs[-1][3]), pos_world)
-        raise SystemExit(0)
-
-    synchronized_groups = get_matched_pairs(human_img_data_path)
-    frame_items_for_parallel, skipped_existing = collect_missing_frame_items(
-        synchronized_groups,
-        args.result_3D_data_path,
-        skip_existing=args.skip_existing,
-    )
-    if skipped_existing > 0:
-        print(f"[single_group] skipped existing/invalid frames: {skipped_existing}")
-    if (not args.debug_vis) and int(args.num_workers) > 1:
         worker_cfg = {
             "all_cams": all_cams,
-            "result_2D_data_path": result_2D_data_path,
-            "result_3D_data_path": args.result_3D_data_path,
+            "result_2D_data_path": result_2d_group_path,
+            "result_3D_data_path": str(result_3d_group_path),
             "intrinsic_cache": intrinsic_cache,
             "extrinsic_cache": extrinsic_cache,
             "reference_cam": args.reference_cam,
@@ -2764,88 +2616,27 @@ if __name__ == '__main__':
             "world_origin_ref": world_origin_ref,
             "skip_existing": args.skip_existing,
         }
-        workers = max(1, int(args.num_workers))
-        chunksize = max(1, int(args.parallel_chunksize))
-        with ProcessPoolExecutor(
-            max_workers=workers,
-            initializer=init_frame_worker,
-            initargs=(worker_cfg,),
-        ) as executor:
-            results = executor.map(
-                reconstruct_and_save_frame_no_debug_global,
-                frame_items_for_parallel,
-                chunksize=chunksize,
-            )
-            for _ in tqdm(results, total=len(frame_items_for_parallel), desc=f"Group x{workers}"):
-                pass
 
-        if args.show_final_vis:
-            vis_results_3D(args.result_3D_data_path, pos_world)
-        raise SystemExit(0)
-    for frame_id, group in tqdm(synchronized_groups.items(), total=len(synchronized_groups), desc=f"Group"):
-        result_3D_filename = frame_result_3d_filename(group)
-        if result_3D_filename is None:
-            continue
-        result_3D_path = args.result_3D_data_path / f"{result_3D_filename}.pkl"
-        if args.skip_existing and result_3D_path.exists():
-            continue
-
-        rays = get_keypoint_ray_fast(
-            result_2D_data_path=result_2D_data_path,
-            group=group,
-            frame_id=frame_id,
-            intrinsic_cache=intrinsic_cache,
-            calib_path=args.calib_path,
-            use_2d_scores=args.use_2d_scores,
-        )
-        if args.matching_mode == "exhaustive":
-            coordinates_dict, per_cam_errors, selected_combinations = get_3D_keypoints_from_rays(
-                rays,
-                frame_id=frame_id,
-                reference_cam=args.reference_cam,
-                calib_path=args.calib_path,
-            )
-            combination_cams = sorted(set(r.camera_id for r in rays if r.frame_id == frame_id and r.valid))
+        if workers > 1:
+            with ProcessPoolExecutor(
+                max_workers=workers,
+                initializer=init_frame_worker,
+                initargs=(worker_cfg,),
+            ) as executor:
+                results = executor.map(
+                    reconstruct_and_save_frame_no_debug_global,
+                    frame_items,
+                    chunksize=chunksize,
+                )
+                for result in tqdm(results, total=len(frame_items), desc=f"Group {group_name} x{workers}"):
+                    if not result.get("skipped", False):
+                        total_done += 1
         else:
-            coordinates_dict, per_cam_errors, selected_combinations = get_3D_keypoints_from_rays_ref_guided(
-                rays,
-                frame_id=frame_id,
-                reference_cam=args.reference_cam,
-                top_k_pairwise=args.pairwise_top_k,
-                min_support_cams=args.min_support_cams,
-                score_threshold=0.5,
-                max_missing_cams=args.max_missing_cams,
-                pairwise_none_error_m=args.pairwise_none_error_m,
-                pairwise_candidate_error_m=args.pairwise_candidate_error_m,
-                extrinsic_cache=extrinsic_cache,
-                calib_path=args.calib_path,
-                output_cams=tuple(all_cams),
-                verbose_every=args.verbose_every,
-                max_candidate_ray_error_m=args.max_candidate_ray_error_m,
-                strict_two_cam_ray_error_m=args.strict_two_cam_ray_error_m,
-                min_candidate_valid_joints=args.min_candidate_valid_joints,
-                support_aware_sort=args.support_aware_sort,
-            )
-            combination_cams = list(all_cams)
-        coordinates = coordinates_dict[frame_id]
-        selected_combinations_aligned = align_combinations_to_cams(
-            selected_combinations,
-            source_cams=combination_cams,
-            target_cams=all_cams,
-        )
-        selected_combinations_for_reproj = list(selected_combinations_aligned)
+            for frame_item in tqdm(frame_items, total=len(frame_items), desc=f"Group {group_name}"):
+                result = reconstruct_and_save_frame_no_debug(frame_item, worker_cfg)
+                if not result.get("skipped", False):
+                    total_done += 1
 
-        # ---------- ref_cam 坐标系 -> world 坐标系 ----------
-        coordinates_world = coordinates.copy()
-        for person_id in range(coordinates.shape[0]):
-            valid_mask = np.all(np.isfinite(coordinates[person_id]), axis=1)
-            if np.any(valid_mask):
-                coordinates_world[person_id, valid_mask] = (
-                    R_ref_to_world @ (coordinates[person_id, valid_mask] - world_origin_ref).T
-                ).T
-        with open(result_3D_path, "wb") as f:
-            pickle.dump(coordinates_world, f)
-
-    '''可视化3D结果'''
-    if args.show_final_vis:
-        vis_results_3D(args.result_3D_data_path, pos_world)
+    print(f"[all_groups] done={total_done} skipped={total_skipped}")
+    if args.show_final_vis and len(group_jobs) > 0:
+        vis_results_3D(group_jobs[-1][3], pos_world)

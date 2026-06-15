@@ -15,12 +15,8 @@ os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', type=str, default="cuda:0", help="模型推理使用的计算设备，例如 cuda:0 或 cpu。")
-    parser.add_argument('--root_path', type=Path, default=Path(r"E:\20260609_164720\camera"), help="完整数据集的根目录，用于读取输入数据并保存处理结果。")
-    parser.add_argument('--data_path', type=Path, default=None, help="兼容旧参数；不指定时使用 root_path。")
+    parser.add_argument('--data_path', type=Path, default=Path(r"E:\data_collection\group_003"), help="完整数据集的根目录，用于读取输入数据并保存处理结果。")
     args = parser.parse_args()
-    if args.root_path is None and args.data_path is None:
-        parser.error("请指定 --root_path，或使用兼容旧参数 --data_path。")
-    args.data_path = args.data_path or args.root_path
     return args
 
 
@@ -99,30 +95,28 @@ def run_inference(img_path, det_model, pose_model, det_score_thr=0.5):
 if __name__ == "__main__":
     args = parse_args()
     device = torch.device(args.device)
-    data_path = args.data_path / "human"
-    save_path = args.data_path / "results" / "2D"
+    data_path = args.data_path / "camera"
+    save_path = args.data_path / "camera results" / "2D"
     save_path.mkdir(parents=True, exist_ok=True)
     det_model = model_for_seg_init(device=device)
     pose_model = model_for_pose_init(device=device)
 
-    groups = sorted(p for p in data_path.iterdir() if p.is_dir())
-    for group_path in groups:
-        group = group_path.name
-        cams = sorted(p for p in group_path.iterdir() if p.is_dir())
-        for cam_path in cams:
-            cam_id = cam_path.name
-            save_cam_path = save_path / group / cam_id
-            save_cam_path.mkdir(parents=True, exist_ok=True)
-            frame_paths = sorted((cam_path / "frames").iterdir())
-            for idx, img_path in tqdm(enumerate(frame_paths),desc=f"Group: {group}, Cam: {cam_id}", ncols=100):
-                img_name = img_path.stem
-                output_path = save_cam_path / f"{img_name}.npz"
-                masks_np, kpts, scores, bboxes, bboxes_scores = run_inference(img_path, det_model, pose_model)
-                np.savez(
-                        output_path,
-                        # masks=masks_np,
-                        kpts=kpts,
-                        scores=scores,
-                        bboxes=bboxes,
-                        bboxes_scores=bboxes_scores,
-                        )
+    cams = sorted(p for p in data_path.iterdir() if p.is_dir())
+
+    for cam_path in cams:
+        cam_id = cam_path.name
+        save_cam_path = save_path / cam_id
+        save_cam_path.mkdir(parents=True, exist_ok=True)
+        frame_paths = sorted((cam_path / "frames").iterdir())
+        for idx, img_path in tqdm(enumerate(frame_paths),desc=f"Cam: {cam_id}", ncols=100, total=len(frame_paths)):
+            img_name = img_path.stem
+            output_path = save_cam_path / f"{img_name}.npz"
+            masks_np, kpts, scores, bboxes, bboxes_scores = run_inference(img_path, det_model, pose_model)
+            np.savez(
+                    output_path,
+                    # masks=masks_np,
+                    kpts=kpts,
+                    scores=scores,
+                    bboxes=bboxes,
+                    bboxes_scores=bboxes_scores,
+                    )

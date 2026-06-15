@@ -38,8 +38,7 @@ DIRECTED_BONES = [
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root_path", type=Path, default=Path(r"E:\20260609"), help="本次采集或标定的数据根目录。其余路径默认由该目录自动派生。")
-    parser.add_argument("--group", type=str, default="0", help="人体采集组号，用于派生默认输入和输出目录。")
+    parser.add_argument("--root_path", type=Path, default=Path(r"E:\data_collection\group_003"), help="本次采集或标定的数据根目录。其余路径默认由该目录自动派生。")
     parser.add_argument("--input_path", type=Path, default=None, help="原始 3D 关键点结果输入目录，默认使用 root_path/results/3D/group。")
     parser.add_argument("--output_path", type=Path, default=None, help="时序平滑后 3D 关键点结果的输出目录，默认使用 root_path/results/smoothed 3D/group。")
     parser.add_argument("--smooth_alpha", type=float, default=0.35, help="指数平滑系数，用于控制新观测与历史轨迹的融合比例。")
@@ -60,8 +59,8 @@ def parse_args():
     args = parser.parse_args()
     if args.root_path is None and any(p is None for p in (args.input_path, args.output_path)):
         parser.error("请指定 --root_path，或同时指定 --input_path 和 --output_path。")
-    args.input_path = args.input_path or args.root_path / "results" / "3D" / args.group
-    args.output_path = args.output_path or args.root_path / "results" / "smoothed 3D" / args.group
+    args.input_path = args.input_path or args.root_path / "camera results" / "3D"
+    args.output_path = args.output_path or args.root_path / "camera results" / "smoothed 3D"
     return args
 
 
