@@ -233,30 +233,6 @@ def align_multi_sensor_files(
 ) -> Dict[str, List[Optional[str]]]:
     """
     多传感器文件时间戳对齐
-
-    Args:
-        sources: 传感器字典，格式为 {'传感器名称': '目录路径', ...}
-                 路径为None的传感器会被忽略
-        max_delta_sec: 最大允许时间差（秒），超过则匹配置为None
-        one_to_one: 是否一对一匹配（每个文件最多被匹配一次）
-        base_source: 基准传感器名称，None则自动选择第一个非空传感器
-        suffix_map: 自定义文件后缀映射，如 {'lidar': '.pcd', 'gt': '.txt'}
-                    默认规则：名称含'pc'用.npy，含'bin'用.bin，含'pcd'用.pcd
-
-    Returns:
-        字典，键为传感器名称，值为对应的文件路径列表（所有列表长度相同）
-
-    Example:
-        sources = {
-            'lidar': '/data/lidar',
-            'radar1_pc': '/data/radar1/pc',
-            'radar1_bin': '/data/radar1/bin',
-            'radar2_pc': '/data/radar2/pc',
-            'radar2_bin': '/data/radar2/bin',
-            'gt': '/data/ground_truth',
-            'realsense_pc': '/data/realsense'
-        }
-        result = align_multi_sensor_files(sources, max_delta_sec=0.1)
     """
 
     # 默认后缀映射规则

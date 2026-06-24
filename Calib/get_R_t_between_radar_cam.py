@@ -1,6 +1,7 @@
 from itertools import combinations, permutations
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from Img2Points.utils import get_corner_coordinate, get_corner_pixel_from_img
@@ -341,24 +342,29 @@ def plot_registration(points_src, points_dst, R, t, result):
 
 
 def main():
-    root_path = Path(r'E:\data_collection\group_000')
-    distance_threshold = 0.05  # meters; increase if radar detections are noisier
+    root_path = Path(r'G:\20260615\data_collection\group_009')
+    calib_path = Path(r'G:\20260615\calib')
+    pkl_save_path = calib_path / 'corner_pixels_009.pkl'
+    distance_threshold = 0.3  # meters; increase if radar detections are noisier
     radar_cfar_params = {
-        "ref_range": 8,
+        "ref_range": 9,
         "ref_velocity": 8,
-        "guard_range": 4,
-        "guard_velocity": 2,
-        "alpha": 10.0,
+        "guard_range": 8,
+        "guard_velocity": 4,
+        "alpha": 15.0,
         "mode": "ca",
+        # "ref_range": 10,
+        # "ref_velocity": 10,
+        # "guard_range": 4,
+        # "guard_velocity": 4,
+        # "alpha": 10.0,
+        # "mode": "ca",
     }
-    radar_path = root_path / 'dpct高位机\Bin'
+    radar_path = root_path / 'dpct低位机\Bin'
 
     img_path = root_path / 'camera'
-    calib_path = root_path / 'calib'
 
-    pkl_save_path = calib_path / 'corner_pixels.pkl'
-
-    R_t_save_path = calib_path / 'extrinsic_img_to_radar_high.npz'
+    R_t_save_path = calib_path / 'extrinsic_img_to_radar_low.npz'
 
     '''人工标注像素点'''
     get_corner_pixel_from_img(img_path, pkl_save_path, expected_points=4)
@@ -373,18 +379,29 @@ def main():
     if not radar_files:
         raise FileNotFoundError(f"No .bin radar files found in {radar_path}")
     print(f"雷达CFAR参数: {radar_cfar_params}")
-    targets = get_corner_data(radar_files[-1], **radar_cfar_params)
+    targets = get_corner_data(radar_files[1], **radar_cfar_params)
     pc_radar = targets["cartesian coordinate"]
     print(f"雷达检测点数: {pc_radar.shape[0]}")
 
     mask = (
-        (pc_radar[:, 0] > 0.3)
-        & (pc_radar[:, 0] < 5)
-        & (np.abs(pc_radar[:, 1]) < 1)
+        (pc_radar[:, 0] > 1)
+        & (pc_radar[:, 0] < 3)
+        & (pc_radar[:, 1] > -1)
+        & (pc_radar[:, 2] < 0.5)
+        & (pc_radar[:, 2] > -0.6)
     )
 
     pc_radar = pc_radar[mask]
     print(f"空间ROI后雷达点数: {pc_radar.shape[0]}")
+
+    plt.figure()
+    ax = plt.subplot(111, projection='3d')
+    ax.scatter(0,0,0,c='r')
+    ax.scatter(pc_radar[:, 0], pc_radar[:, 1], pc_radar[:, 2])
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    plt.show()
+
 
     '''对齐'''
     R_est, t_est, registration = register_unknown_correspondence(

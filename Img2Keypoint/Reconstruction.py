@@ -14,7 +14,8 @@ from matplotlib import pyplot as plt
 from tqdm import tqdm
 import argparse
 
-from utils import *
+from Calib.chessboard_detection_helper import detect_chessboard_fullres, check_corners_order_minimal
+from Img2Keypoint.utils import load_extrinsic_data, load_intrinsic_data, COCO17_SKELETON, get_matched_pairs
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -27,8 +28,8 @@ def str2bool(v):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--root_path', type=Path, default=Path(r"E:\data_collection\group_003"), help="dataset root")
-    parser.add_argument('--calib_path', type=Path, default=None, help="calibration directory, default: root_path/calib")
+    parser.add_argument('--root_path', type=Path, default=Path(r"G:\20260615\data_collection\group_011"), help="dataset root")
+    parser.add_argument('--calib_path', type=Path, default=Path(r'G:\20260615\calib'), help="calibration directory, default: root_path/calib")
     parser.add_argument('--reference_cam', type=str, default="A", help="reference camera id")
     parser.add_argument('--result_2D_data_path', type=Path, default=None, help="2D result directory, default: root_path/camera results/2D")
     parser.add_argument('--result_3D_data_path', type=Path, default=None, help="3D output directory, default: root_path/camera results/3D")
@@ -46,7 +47,7 @@ def parse_args():
     parser.add_argument('--use_2d_scores', type=str2bool, default=True, help="use 2D keypoint scores during matching and reconstruction")
     parser.add_argument('--verbose_every', type=int, default=100, help="progress print interval")
 
-    parser.add_argument('--num_workers', type=int, default=4, help="number of worker processes")
+    parser.add_argument('--num_workers', type=int, default=8, help="number of worker processes")
     parser.add_argument('--parallel_chunksize', type=int, default=8, help="chunksize for process-pool map")
     parser.add_argument('--show_final_vis', type=str2bool, default=False, help="show final 3D visualization after saving")
     parser.add_argument('--skip_existing', type=str2bool, default=False, help="skip frames whose 3D pkl already exists")

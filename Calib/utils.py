@@ -2,6 +2,8 @@ import numpy as np
 
 
 def apply_transform(points_src, R, t):
+    if points_src is None or len(points_src) == 0:
+        return points_src
     points_src, _ = as_xyz(points_src, "points_src")
     return (R @ points_src.T + t.reshape(-1, 1)).T
 

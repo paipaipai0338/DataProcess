@@ -314,13 +314,122 @@ def range_fft(data: np.ndarray, radar_config: Radar_Config, remove_mean_fasttime
         rng_fft = x
     return rng_fft, r_axis[:half]
 
+# def doppler_fft(
+#     data: np.ndarray,
+#     radar_config: Radar_Config,
+#     window: bool = True,
+#     n_fft_doppler: int = 1024,
+#     doppler_mode: Literal["normal", "firmware_tdm"] = "firmware_tdm",
+# ) -> Tuple[np.ndarray, np.ndarray]:
+#     """
+#     doppler_mode:
+#       "normal":
+#         普通 Doppler FFT。输出 shape=(range, n_fft_doppler, ant)。
+#
+#       "firmware_tdm":
+#         Firmware 风格 TDM Doppler FFT。
+#         假设 4Tx TDM-MIMO: Tx0, Tx1, Tx2, Tx3, Tx0...
+#         会把每个 TX 的 64 个 chirp 插回 256 点 TDM 时间轴，
+#         做 256 点 FFT，再按固件卸载顺序取 64 个 Doppler bin。
+#         输出 shape=(range, num_chirp, ant)。
+#         此模式下 n_fft_doppler 不再控制输出点数。
+#     """
+#     data = np.asarray(data)
+#     if data.ndim != 3:
+#         raise RuntimeError("data must have shape (num_samp_or_range, num_chirp, num_ant)")
+#     if n_fft_doppler <= 0:
+#         raise RuntimeError(f"n_fft_doppler 必须大于 0，当前值为 {n_fft_doppler}")
+#
+#     num_samp, num_chirp, num_ant = data.shape
+#
+#     if doppler_mode == "normal":
+#         if window:
+#             w_d = np.hanning(num_chirp).astype(np.float32)
+#             dop_in = data * w_d[None, :, None]
+#         else:
+#             dop_in = data
+#
+#         dop_fft = np.fft.fft(dop_in, n=n_fft_doppler, axis=1)
+#         dop_fft = np.fft.fftshift(dop_fft, axes=1)
+#
+#         Nd = n_fft_doppler
+#         k = np.arange(Nd) - Nd // 2
+#         f_d = k / Nd * radar_config.prf
+#         v_axis = (radar_config.lam / 2.0) * f_d
+#         return dop_fft, v_axis
+#
+#     if doppler_mode != "firmware_tdm":
+#         raise RuntimeError(f"未知 doppler_mode={doppler_mode}")
+#
+#     # -------- Firmware 风格 TDM Doppler FFT --------
+#     num_tx = int(getattr(radar_config, "num_tx", getattr(radar_config, "Tx", 4)))
+#     num_rx = int(getattr(radar_config, "num_rx", getattr(radar_config, "Rx", num_ant // num_tx)))
+#
+#     if num_tx <= 0 or num_rx <= 0:
+#         raise RuntimeError(f"num_tx/num_rx 非法: num_tx={num_tx}, num_rx={num_rx}")
+#
+#     if num_ant != num_tx * num_rx:
+#         raise RuntimeError(
+#             f"firmware_tdm 要求 num_ant == num_tx * num_rx，"
+#             f"当前 num_ant={num_ant}, num_tx={num_tx}, num_rx={num_rx}"
+#         )
+#
+#     # 例如 64 chirps * 4 Tx = 256 点固件 Doppler FFT
+#     firmware_fft_size = num_chirp * num_tx
+#
+#     # 固件 unload 顺序：
+#     # 对 256 点 FFT，取 224..255, 0..31，共 64 个 bin。
+#     use_a = (num_tx - 1) * num_chirp + num_chirp // 2
+#     use_b = num_chirp // 2 - 1
+#     unload_bins = np.r_[use_a:firmware_fft_size, 0:use_b + 1]
+#
+#     dop_fft = np.zeros((num_samp, num_chirp, num_ant), dtype=np.complex128)
+#
+#     if window:
+#         # 这里用 Hann 近似固件速度窗。
+#         # 如果要和 lky.py / C 固件完全一致，可以把 C_WINVEL_PRE 表搬进来替换这里。
+#         full_win = np.hanning(firmware_fft_size).astype(np.float32)
+#         tx_windows = np.stack([
+#             full_win[tx_idx:firmware_fft_size:num_tx][:num_chirp]
+#             for tx_idx in range(num_tx)
+#         ], axis=0)
+#     else:
+#         tx_windows = np.ones((num_tx, num_chirp), dtype=np.float32)
+#
+#     for ant_idx in range(num_ant):
+#         tx_idx = ant_idx // num_rx
+#
+#         # 该虚拟天线属于某个 TX，把它的 64 个 chirp 插回真实 TDM 时序槽
+#         slot_idx = tx_idx + np.arange(num_chirp) * num_tx
+#
+#         tdm_input = np.zeros((num_samp, firmware_fft_size), dtype=np.complex128)
+#         tdm_input[:, slot_idx] = data[:, :, ant_idx] * tx_windows[tx_idx][None, :]
+#
+#         fft_out = np.fft.fft(tdm_input, n=firmware_fft_size, axis=1)
+#         dop_fft[:, :, ant_idx] = fft_out[:, unload_bins]
+#
+#     # 固件输出的 64 个 bin 对应 [-32, ..., 31]
+#     k = np.arange(-num_chirp // 2, num_chirp // 2)
+#
+#     # 优先用 chirp_gap/chirp_time 算，和 lky.py 一致：
+#     # v_res = lam / (2 * num_chirp * num_tx * chirp_gap)
+#     chirp_gap = getattr(radar_config, "chirp_gap", getattr(radar_config, "chirp_time", None))
+#     if chirp_gap is not None:
+#         f_d = k / firmware_fft_size / float(chirp_gap)
+#     else:
+#         # 如果 radar_config.prf 已经是每个 TX 的有效 PRF，即 1/(chirp_time*num_tx)，这个等价。
+#         f_d = k / num_chirp * radar_config.prf
+#
+#     v_axis = (radar_config.lam / 2.0) * f_d
+#     return dop_fft, v_axis
+
 def doppler_fft(
     data: np.ndarray,
     radar_config: Radar_Config,
     window: bool = True,
     n_fft_doppler: int = 1024,
     doppler_mode: Literal["normal", "firmware_tdm"] = "firmware_tdm",
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     doppler_mode:
       "normal":
@@ -335,93 +444,341 @@ def doppler_fft(
         此模式下 n_fft_doppler 不再控制输出点数。
     """
     data = np.asarray(data)
+
     if data.ndim != 3:
-        raise RuntimeError("data must have shape (num_samp_or_range, num_chirp, num_ant)")
+        raise RuntimeError(
+            "data must have shape "
+            "(num_samp_or_range, num_chirp, num_ant), "
+            f"actual shape={data.shape}"
+        )
+
     if n_fft_doppler <= 0:
-        raise RuntimeError(f"n_fft_doppler 必须大于 0，当前值为 {n_fft_doppler}")
+        raise RuntimeError(
+            f"n_fft_doppler 必须大于 0，当前值为 "
+            f"{n_fft_doppler}"
+        )
 
     num_samp, num_chirp, num_ant = data.shape
 
+    # ============================================================
+    # 均值对消分支
+    #
+    # 对每个 range bin、每根虚拟天线，
+    # 沿慢时间 chirp 维减去复数 IQ 均值。
+    #
+    # data:       [R, C, A]
+    # mean:       [R, 1, A]
+    # data_clean: [R, C, A]
+    # ============================================================
+    data_clean = (
+        data
+        - np.mean(
+            data,
+            axis=1,
+            keepdims=True,
+        )
+    )
+
+    # ============================================================
+    # 普通 Doppler FFT
+    # ============================================================
     if doppler_mode == "normal":
         if window:
-            w_d = np.hanning(num_chirp).astype(np.float32)
-            dop_in = data * w_d[None, :, None]
+            w_d = np.hanning(
+                num_chirp
+            ).astype(np.float32)
+
+            dop_in = (
+                data
+                * w_d[None, :, None]
+            )
+
+            dop_in_clean = (
+                data_clean
+                * w_d[None, :, None]
+            )
         else:
             dop_in = data
+            dop_in_clean = data_clean
 
-        dop_fft = np.fft.fft(dop_in, n=n_fft_doppler, axis=1)
-        dop_fft = np.fft.fftshift(dop_fft, axes=1)
+        # 原始分支
+        dop_fft = np.fft.fft(
+            dop_in,
+            n=n_fft_doppler,
+            axis=1,
+        )
+
+        dop_fft = np.fft.fftshift(
+            dop_fft,
+            axes=1,
+        )
+
+        # 均值对消分支
+        dop_fft_clean = np.fft.fft(
+            dop_in_clean,
+            n=n_fft_doppler,
+            axis=1,
+        )
+
+        dop_fft_clean = np.fft.fftshift(
+            dop_fft_clean,
+            axes=1,
+        )
 
         Nd = n_fft_doppler
-        k = np.arange(Nd) - Nd // 2
-        f_d = k / Nd * radar_config.prf
-        v_axis = (radar_config.lam / 2.0) * f_d
-        return dop_fft, v_axis
+
+        k = (
+            np.arange(Nd)
+            - Nd // 2
+        )
+
+        f_d = (
+            k
+            / Nd
+            * radar_config.prf
+        )
+
+        v_axis = (
+            radar_config.lam
+            / 2.0
+        ) * f_d
+
+        return (
+            dop_fft,
+            dop_fft_clean,
+            v_axis,
+        )
 
     if doppler_mode != "firmware_tdm":
-        raise RuntimeError(f"未知 doppler_mode={doppler_mode}")
+        raise RuntimeError(
+            f"未知 doppler_mode={doppler_mode}"
+        )
 
-    # -------- Firmware 风格 TDM Doppler FFT --------
-    num_tx = int(getattr(radar_config, "num_tx", getattr(radar_config, "Tx", 4)))
-    num_rx = int(getattr(radar_config, "num_rx", getattr(radar_config, "Rx", num_ant // num_tx)))
+    # ============================================================
+    # Firmware 风格 TDM Doppler FFT
+    # ============================================================
+    num_tx = int(
+        getattr(
+            radar_config,
+            "num_tx",
+            getattr(
+                radar_config,
+                "Tx",
+                4,
+            ),
+        )
+    )
+
+    num_rx = int(
+        getattr(
+            radar_config,
+            "num_rx",
+            getattr(
+                radar_config,
+                "Rx",
+                num_ant // num_tx,
+            ),
+        )
+    )
 
     if num_tx <= 0 or num_rx <= 0:
-        raise RuntimeError(f"num_tx/num_rx 非法: num_tx={num_tx}, num_rx={num_rx}")
+        raise RuntimeError(
+            f"num_tx/num_rx 非法: "
+            f"num_tx={num_tx}, "
+            f"num_rx={num_rx}"
+        )
 
     if num_ant != num_tx * num_rx:
         raise RuntimeError(
-            f"firmware_tdm 要求 num_ant == num_tx * num_rx，"
-            f"当前 num_ant={num_ant}, num_tx={num_tx}, num_rx={num_rx}"
+            "firmware_tdm 要求 "
+            "num_ant == num_tx * num_rx，"
+            f"当前 num_ant={num_ant}, "
+            f"num_tx={num_tx}, "
+            f"num_rx={num_rx}"
         )
 
-    # 例如 64 chirps * 4 Tx = 256 点固件 Doppler FFT
-    firmware_fft_size = num_chirp * num_tx
+    firmware_fft_size = (
+        num_chirp
+        * num_tx
+    )
 
     # 固件 unload 顺序：
-    # 对 256 点 FFT，取 224..255, 0..31，共 64 个 bin。
-    use_a = (num_tx - 1) * num_chirp + num_chirp // 2
-    use_b = num_chirp // 2 - 1
-    unload_bins = np.r_[use_a:firmware_fft_size, 0:use_b + 1]
+    # 例如 256 点 FFT，取 224..255 和 0..31。
+    use_a = (
+        (num_tx - 1) * num_chirp
+        + num_chirp // 2
+    )
 
-    dop_fft = np.zeros((num_samp, num_chirp, num_ant), dtype=np.complex128)
+    use_b = (
+        num_chirp // 2
+        - 1
+    )
+
+    unload_bins = np.r_[
+        use_a:firmware_fft_size,
+        0:use_b + 1,
+    ]
+
+    # 原始分支和均值对消分支
+    dop_fft = np.zeros(
+        (
+            num_samp,
+            num_chirp,
+            num_ant,
+        ),
+        dtype=np.complex128,
+    )
+
+    dop_fft_clean = np.zeros(
+        (
+            num_samp,
+            num_chirp,
+            num_ant,
+        ),
+        dtype=np.complex128,
+    )
 
     if window:
-        # 这里用 Hann 近似固件速度窗。
-        # 如果要和 lky.py / C 固件完全一致，可以把 C_WINVEL_PRE 表搬进来替换这里。
-        full_win = np.hanning(firmware_fft_size).astype(np.float32)
-        tx_windows = np.stack([
-            full_win[tx_idx:firmware_fft_size:num_tx][:num_chirp]
-            for tx_idx in range(num_tx)
-        ], axis=0)
+        full_win = np.hanning(
+            firmware_fft_size
+        ).astype(np.float32)
+
+        tx_windows = np.stack(
+            [
+                full_win[
+                    tx_idx:
+                    firmware_fft_size:
+                    num_tx
+                ][:num_chirp]
+                for tx_idx in range(num_tx)
+            ],
+            axis=0,
+        )
     else:
-        tx_windows = np.ones((num_tx, num_chirp), dtype=np.float32)
+        tx_windows = np.ones(
+            (
+                num_tx,
+                num_chirp,
+            ),
+            dtype=np.float32,
+        )
 
     for ant_idx in range(num_ant):
-        tx_idx = ant_idx // num_rx
+        tx_idx = (
+            ant_idx
+            // num_rx
+        )
 
-        # 该虚拟天线属于某个 TX，把它的 64 个 chirp 插回真实 TDM 时序槽
-        slot_idx = tx_idx + np.arange(num_chirp) * num_tx
+        # 当前虚拟天线对应的真实 TDM 时间槽
+        slot_idx = (
+            tx_idx
+            + np.arange(num_chirp)
+            * num_tx
+        )
 
-        tdm_input = np.zeros((num_samp, firmware_fft_size), dtype=np.complex128)
-        tdm_input[:, slot_idx] = data[:, :, ant_idx] * tx_windows[tx_idx][None, :]
+        # --------------------------------------------------------
+        # 原始数据分支
+        # --------------------------------------------------------
+        tdm_input = np.zeros(
+            (
+                num_samp,
+                firmware_fft_size,
+            ),
+            dtype=np.complex128,
+        )
 
-        fft_out = np.fft.fft(tdm_input, n=firmware_fft_size, axis=1)
-        dop_fft[:, :, ant_idx] = fft_out[:, unload_bins]
+        tdm_input[:, slot_idx] = (
+            data[:, :, ant_idx]
+            * tx_windows[
+                tx_idx
+            ][None, :]
+        )
 
-    # 固件输出的 64 个 bin 对应 [-32, ..., 31]
-    k = np.arange(-num_chirp // 2, num_chirp // 2)
+        fft_out = np.fft.fft(
+            tdm_input,
+            n=firmware_fft_size,
+            axis=1,
+        )
 
-    # 优先用 chirp_gap/chirp_time 算，和 lky.py 一致：
-    # v_res = lam / (2 * num_chirp * num_tx * chirp_gap)
-    chirp_gap = getattr(radar_config, "chirp_gap", getattr(radar_config, "chirp_time", None))
+        dop_fft[
+            :,
+            :,
+            ant_idx,
+        ] = fft_out[:, unload_bins]
+
+        # --------------------------------------------------------
+        # 均值对消分支
+        # --------------------------------------------------------
+        tdm_input_clean = np.zeros(
+            (
+                num_samp,
+                firmware_fft_size,
+            ),
+            dtype=np.complex128,
+        )
+
+        tdm_input_clean[:, slot_idx] = (
+            data_clean[:, :, ant_idx]
+            * tx_windows[
+                tx_idx
+            ][None, :]
+        )
+
+        fft_out_clean = np.fft.fft(
+            tdm_input_clean,
+            n=firmware_fft_size,
+            axis=1,
+        )
+
+        dop_fft_clean[
+            :,
+            :,
+            ant_idx,
+        ] = fft_out_clean[
+            :,
+            unload_bins,
+        ]
+
+    # 固件输出的 num_chirp 个 bin：
+    # [-num_chirp/2, ..., num_chirp/2 - 1]
+    k = np.arange(
+        -num_chirp // 2,
+        num_chirp // 2,
+    )
+
+    chirp_gap = getattr(
+        radar_config,
+        "chirp_gap",
+        getattr(
+            radar_config,
+            "chirp_time",
+            None,
+        ),
+    )
+
     if chirp_gap is not None:
-        f_d = k / firmware_fft_size / float(chirp_gap)
+        f_d = (
+            k
+            / firmware_fft_size
+            / float(chirp_gap)
+        )
     else:
-        # 如果 radar_config.prf 已经是每个 TX 的有效 PRF，即 1/(chirp_time*num_tx)，这个等价。
-        f_d = k / num_chirp * radar_config.prf
+        f_d = (
+            k
+            / num_chirp
+            * radar_config.prf
+        )
 
-    v_axis = (radar_config.lam / 2.0) * f_d
-    return dop_fft, v_axis
+    v_axis = (
+        radar_config.lam
+        / 2.0
+    ) * f_d
+
+    return (
+        dop_fft,
+        dop_fft_clean,
+        v_axis,
+    )
 
 def angle_fft(data: np.ndarray, radar_config: Radar_Config, window: bool = True, n_fft_angle: int = 1024, target_index: List = None, channel_index: List = None, type: str = 'ele', method: str = 'fft') -> Tuple[np.ndarray, np.ndarray]:
     """
