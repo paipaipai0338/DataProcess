@@ -28,7 +28,7 @@ def parse_args():
     parser.add_argument(
         "--data_path",
         type=Path,
-        default=Path(r"C:\Users\Administrator\Desktop\20260701\data_collection\group_005"),
+        default=Path(r"C:\Users\Administrator\Desktop\20260702\data_collection\group_005"),
         help="用于外参检查的一组数据目录；可为 group_xxx、group_xxx/camera，或包含多个 group_xxx 的父目录。",
     )
     parser.add_argument(

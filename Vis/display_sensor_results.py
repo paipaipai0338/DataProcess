@@ -109,7 +109,7 @@ def _plot_multi_sensor_frame_matplotlib(
 
 def main():
     root_path = Path(r'F:\20260703\data_collection\group_041')
-    calib_path = Path(r'F:\20260703\calib')
+    calib_path = root_path.parent.parent / 'calib'
     calib_flag = True
     select_flag = False
     continuous_play_flag = True

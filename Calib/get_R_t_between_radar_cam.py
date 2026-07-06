@@ -358,10 +358,22 @@ def plot_registration(points_src, points_dst, R, t, result):
 
 
 def main():
-    root_path = Path(r'C:\Users\Administrator\Desktop\20260702\data_collection\group_008')
-    calib_path = Path(r'C:\Users\Administrator\Desktop\20260702\calib')
-    pkl_save_path = calib_path / 'corner_pixels_008.pkl'
-    radar_path = root_path / 'dpct高位机\Bin'
+    from pathlib import Path
+
+    root_path = Path(r'F:\20260703\data_collection\group_008')
+    radar_selected = 'high' # low high
+
+    group_name = root_path.name  # 'group_008'
+    group_num = group_name.split('_')[1]  # '008'
+
+    calib_path = root_path.parent.parent / 'calib'  # 回到 20260702 目录
+    pkl_save_path = calib_path / f'corner_pixels_{group_num}.pkl'
+    if radar_selected == 'low':
+        radar_path = root_path / 'dpct低位机\Bin'
+        R_t_save_path = calib_path / 'extrinsic_img_to_radar_low.npz'
+    elif radar_selected == 'high':
+        radar_path = root_path / 'dpct高位机\Bin'
+        R_t_save_path = calib_path / 'extrinsic_img_to_radar_high.npz'
     distance_threshold = 0.3  # meters; increase if radar detections are noisier
     radar_cfar_params = {
         # "ref_range": 9,
@@ -381,7 +393,6 @@ def main():
 
     img_path = root_path / 'camera'
 
-    R_t_save_path = calib_path / 'extrinsic_img_to_radar_high.npz'
 
     '''人工标注像素点'''
     get_corner_pixel_from_img(img_path, pkl_save_path, expected_points=4)
@@ -401,10 +412,10 @@ def main():
     print(f"雷达检测点数: {pc_radar.shape[0]}")
 
     mask = (
-        (pc_radar[:, 0] > 0.2)
-        & (pc_radar[:, 0] < 3)
+        (pc_radar[:, 0] > 1.5)
+        & (pc_radar[:, 0] < 4)
         # & (pc_radar[:, 1] > -1.5)
-        & (pc_radar[:, 2] < 2)
+        & (pc_radar[:, 2] < 1)
         & (pc_radar[:, 2] > -3)
     )
 
