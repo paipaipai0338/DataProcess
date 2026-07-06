@@ -80,7 +80,7 @@ def get_bin_pc(
     r_axis = np.arange(range_fft_cube.shape[0], dtype=np.float64) * range_res
 
     doppler_input = mean_cancel_slow_time(range_fft_cube) if mean_cancel else range_fft_cube
-    rd_cube, v_axis = doppler_fft(
+    rd_cube, _,  v_axis = doppler_fft(
         doppler_input,
         radar_config,
         window=True,

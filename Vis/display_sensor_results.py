@@ -3,6 +3,7 @@ import pickle
 import sys
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from RadarProcess import lky as lky_module
@@ -10,29 +11,113 @@ from RadarProcess.bin_to_pc import get_bin_pc
 
 sys.modules.setdefault("lky", lky_module)
 from RadarProcess.lky_pointcloud_utils import generate_point_cloud_array_from_bin
-from Vis.utils import (
-    close_multi_sensor_player,
-    create_multi_sensor_player,
-    play_multi_sensor_frame,
-    visualize_multi_sensor,
-)
 from TimeProcess.utils import timestamp_to_ms, align_multi_sensor_files
 from LidarProcess.utils import read_pcd
 from RealSenseProcess.utils import get_realsense_data
 from RadarProcess.utils import get_corner_data, get_pc_data
-from Img2Keypoint.utils import get_gt_data
+from Img2Keypoint.utils import COCO17_SKELETON, get_gt_data
 from Calib.utils import apply_transform
 
+
+
+def _plot_coordinate_frame(ax, size=1.0):
+    origin = np.zeros(3)
+    axes = (
+        ("X", np.array([size, 0, 0]), "r"),
+        ("Y", np.array([0, size, 0]), "g"),
+        ("Z", np.array([0, 0, size]), "b"),
+    )
+    for label, direction, color in axes:
+        ax.plot(
+            [origin[0], direction[0]],
+            [origin[1], direction[1]],
+            [origin[2], direction[2]],
+            color=color,
+            linewidth=1.5,
+        )
+        ax.text(direction[0], direction[1], direction[2], label, color=color)
+
+
+def _plot_gt_matplotlib(ax, gt, color, label):
+    gt = np.asarray(gt)
+    if gt.size == 0:
+        return
+
+    if gt.ndim == 2:
+        max_index = max(max(pair) for pair in COCO17_SKELETON) + 1
+        if gt.shape[0] % max_index != 0:
+            points = gt[:, :3]
+            ax.scatter(points[:, 0], points[:, 1], points[:, 2], s=12, color=[color], label=label)
+            return
+        gt = gt.reshape(gt.shape[0] // max_index, max_index, 3)
+
+    points = gt.reshape(-1, gt.shape[-1])[:, :3]
+    ax.scatter(points[:, 0], points[:, 1], points[:, 2], s=12, color=[color], label=label)
+
+    for person_points in gt:
+        person_points = person_points[:, :3]
+        for start, end in COCO17_SKELETON:
+            if start < len(person_points) and end < len(person_points):
+                segment = person_points[[start, end]]
+                ax.plot(segment[:, 0], segment[:, 1], segment[:, 2], color=color, linewidth=1.0)
+
+
+def _plot_multi_sensor_frame_matplotlib(
+        fig,
+        ax,
+        data,
+        colors,
+        frame_idx,
+        play_interval_sec,
+):
+    ax.cla()
+    _plot_coordinate_frame(ax, size=1.0)
+
+    has_label = False
+    for data_key, data_value in data.items():
+        if data_value is None:
+            continue
+
+        data_value = np.asarray(data_value)
+        if data_value.size == 0:
+            continue
+
+        color = colors.get(data_key, [0.7, 0.7, 0.7])
+        if data_key == "gt":
+            _plot_gt_matplotlib(ax, data_value, color, data_key)
+            has_label = True
+            continue
+
+        points = data_value.reshape(-1, data_value.shape[-1])[:, :3]
+        if data_key in {"lidar_pcd", "realsense_depth"}:
+            points = points[::100]
+        ax.scatter(points[:, 0], points[:, 1], points[:, 2], s=4, color=[color], label=data_key)
+        has_label = True
+
+    ax.set_title(f"Frame {frame_idx:04d}")
+    ax.set_xlim(0, 5)
+    ax.set_ylim(-3, 3)
+    ax.set_zlim(-2.2, 2.2)
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_zlabel("Z")
+    if has_label:
+        ax.legend(loc="upper right")
+    fig.canvas.draw_idle()
+    plt.pause(max(float(play_interval_sec), 0.1))
+
+
 def main():
-    root_path = Path(r'G:\20260615\data_collection\group_025')
-    calib_path = Path(r'G:\20260615\calib')
+    root_path = Path(r'F:\20260703\data_collection\group_041')
+    calib_path = Path(r'F:\20260703\calib')
     calib_flag = True
     select_flag = False
-    continuous_play_flag = False
+    continuous_play_flag = True
     play_interval_sec = 0.1
     vis_scene_center = [0, 0, 0]
     vis_scene_size = 40
-    vis_data = ['radar_low_bin', 'radar_high_bin', 'radar_low_pc', 'radar_high_pc', 'realsense', 'lidar', 'gt']
+    # vis_data = ['radar_low_bin', 'radar_high_bin', 'radar_low_pc', 'radar_high_pc', 'realsense', 'lidar', 'gt']
+    vis_data = ['radar_low_bin', 'radar_high_bin', 'radar_low_pc', 'radar_high_pc', 'gt']
     # vis_data = ['radar_low_bin', 'radar_high_bin', 'realsense', 'lidar']
     # vis_data = ['radar_high_pc', 'gt']
 
@@ -50,11 +135,12 @@ def main():
         "guard_velocity": 4,
         "alpha": 10.0,
         "mode": "ca",
+
     }
     radar_high_cfar_params = {
-        "ref_range": 10,
-        "ref_velocity": 10,
-        "guard_range": 4,
+        "ref_range": 9,
+        "ref_velocity": 8,
+        "guard_range": 8,
         "guard_velocity": 4,
         "alpha": 10.0,
         "mode": "ca",
@@ -70,7 +156,7 @@ def main():
 
     lidar_path = root_path / 'robosense'
 
-    realsense_path = root_path / 'realsense' / 'undistorted_depth'
+    realsense_path = root_path / 'realsense' / 'aligned_depth'
 
     gt_path = root_path / 'camera results' / 'smoothed 3D'
 
@@ -100,14 +186,14 @@ def main():
         sources=sensors,
         max_delta_sec=0.05,
         one_to_one=True,
-        base_source='radar_low_pc',  # 可选，不指定则自动选择
+        base_source='radar_high_pc',  # 可选，不指定则自动选择
         suffix_map=suffix_map,
-        time_offsets_sec={
-            "gt": -0.2
-        }
+        # time_offsets_sec={
+        #     "gt": -0.2
+        # }
     )
 
-    base_files_matched = result.get('radar_low_pc') or next((files for files in result.values() if files), [])
+    base_files_matched = result.get('radar_high_pc') or next((files for files in result.values() if files), [])
     frames = len(base_files_matched)
 
     def get_matched_files(name):
@@ -135,15 +221,19 @@ def main():
         'realsense_depth': [0.0, 1.0, 0.0],  # 纯绿色 (RGB: 0, 255, 0)
     }
 
-    player = None
+    # player = None
     if continuous_play_flag:
-        player = create_multi_sensor_player(
-            colors,
-            window_name="Multi-Sensor Playback",
-            frame_interval_sec=play_interval_sec,
-            scene_center=vis_scene_center,
-            scene_size=vis_scene_size,
-        )
+        # player = create_multi_sensor_player(
+        #     colors,
+        #     window_name="Multi-Sensor Playback",
+        #     frame_interval_sec=play_interval_sec,
+        #     scene_center=vis_scene_center,
+        #     scene_size=vis_scene_size,
+        # )
+        fig = plt.figure("Multi-Sensor Playback")
+        ax = fig.add_subplot(111, projection='3d')
+        plt.ion()
+        fig.show()
 
     for frame_idx in range(frames):
         print('*' * 50, f'frame: {frame_idx}', '*' * 50)
@@ -323,9 +413,21 @@ def main():
         }
 
         if continuous_play_flag:
-            if not play_multi_sensor_frame(player, data_for_vis):
+            # if not play_multi_sensor_frame(player, data_for_vis):
+            #     break
+            if not plt.fignum_exists(fig.number):
                 break
+            _plot_multi_sensor_frame_matplotlib(
+                fig,
+                ax,
+                data_for_vis,
+                colors,
+                frame_idx,
+                play_interval_sec,
+            )
         else:
+            from Vis.utils import visualize_multi_sensor
+
             visualize_multi_sensor(
                 data_for_vis,
                 colors,
@@ -334,8 +436,8 @@ def main():
                 scene_size=vis_scene_size,
             )
 
-    if player is not None:
-        close_multi_sensor_player(player)
+    # if player is not None:
+    #     close_multi_sensor_player(player)
 
 
 if __name__ == '__main__':

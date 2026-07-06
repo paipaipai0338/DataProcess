@@ -9,10 +9,11 @@ from RadarProcess.utils import bin_to_cube_range_fft, doppler_fft, Radar_Config,
 
 
 if __name__ == '__main__':
-    root_path = Path(r'C:\Users\Administrator\Desktop\frames')
-    radar_bin_path = root_path
-    # radar_path = root_path / 'dpct低位机'
-    # radar_bin_path = radar_path / 'Bin'
+    # root_path = Path(r'C:\Users\Administrator\Desktop\frames')
+    # radar_bin_path = root_path
+    root_path = Path(r'C:\Users\Administrator\Desktop\20260702\data_collection\group_010')
+    radar_path = root_path / 'dpct低位机'
+    radar_bin_path = radar_path / 'Bin'
 
     bin_files = os.listdir(radar_bin_path)
     bin_files.sort()

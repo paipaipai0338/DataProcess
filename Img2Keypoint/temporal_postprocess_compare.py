@@ -38,7 +38,7 @@ DIRECTED_BONES = [
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root_path", type=Path, default=Path(r"G:\20260615\data_collection\group_011"), help="本次采集或标定的数据根目录。其余路径默认由该目录自动派生。")
+    parser.add_argument("--root_path", type=Path, default=Path(r"C:\Users\Administrator\Desktop\20260702\data_collection\group_036"), help="本次采集或标定的数据根目录。其余路径默认由该目录自动派生。")
     parser.add_argument("--input_path", type=Path, default=None, help="原始 3D 关键点结果输入目录，默认使用 root_path/results/3D/group。")
     parser.add_argument("--output_path", type=Path, default=None, help="时序平滑后 3D 关键点结果的输出目录，默认使用 root_path/results/smoothed 3D/group。")
     parser.add_argument("--smooth_alpha", type=float, default=0.35, help="指数平滑系数，用于控制新观测与历史轨迹的融合比例。")

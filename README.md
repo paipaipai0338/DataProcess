@@ -1,91 +1,52 @@
 # DataProcess
 
-本项目用于多传感器数据处理，重点包括相机、毫米波雷达、激光雷达和 RealSense 数据的读取、时间对齐、标定、关键点提取、点云处理与可视化。
+## 使用教程
 
-## 项目结构
+1. 提前复制相机的内参到 calib 文件夹中
 
+2. [相机外参获取](Calib/get_camera_extrinsic.py)
+
+只需要修改 parse_args 函数中的 data_path、save_path即可，随后运行；
+
+运行完成后期望：在 calib 文件夹中产生 7 组 extrinsic_T_cam_X_to_cam_ref.npy 文件
+
+3. [相机外参验证](Calib/check_in&ex.py)
+
+只需要修改 parse_args 函数中的 data_path、calib_path即可（只需要修改日期字段即可），随后运行；
+
+运行完成后期望：命令行输出：
 ```text
-DataProcess/
-├── Calib/              # 标定相关脚本，例如雷达与相机之间的外参估计
-├── Img2Keypoint/       # 图像人体检测、2D/3D关键点处理与后处理
-├── Img2Points/         # 图像点位、角点等辅助处理
-├── LidarProcess/       # 激光雷达点云读取与处理
-├── RadarProcess/       # 雷达原始数据读取、FFT、CFAR和点云生成
-├── RealSenseProcess/   # RealSense深度数据读取与处理
-├── TimeProcess/        # 多源传感器时间戳转换与数据对齐
-└── Vis/                # 多传感器结果可视化
+========== check extrinsic group=group_005 ==========
+[INFO] group=group_005, used_cameras=['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'], num_valid_points=576
+[INFO] mean=0.004220 m, rmse=0.004618 m, median=0.004084 m, max=0.012606 m
+[INFO] plane_mean=0.000518 m, plane_rmse=0.000639 m, plane_max=0.002366 m
 ```
+其中误差均在毫米或亚毫米量级即可
 
-## 主要功能
+4. [角反在相机阵列下的坐标系获取](Calib/get_R_t_between_radar_cam.py)
 
-- 雷达 `.bin` 原始数据解析与点云生成
-- LiDAR `.pcd` 点云读取
-- RealSense 深度数据读取
-- 多传感器文件按时间戳对齐
-- 相机图像中的人体检测与关键点提取
-- 雷达、相机、点云之间的标定和坐标变换
-- 多传感器点云结果可视化
+修改：
+- root_path calib_path 修改方式： 修改日期字段以及后续的组号 group_006 - group_010 (当某组数据实在是无法通过修改参数获取正确的对齐方式时可更改)
+- radar_selected 修改方式每组数据都需要修改 low 和 high 后运行 (确保low high 均由一组数据产生)
 
-## 环境依赖
+运行过程中：会弹出拍摄的角反照片，按照角反的实际位置进行编号，随后在照片上点击确定角反位置，如图![img.png](Fig/img.png)所示，若相机未拍摄到某个角反点击missing即可，选择完成后点击save。
+重复操作直至8台相机全部完成，注意跨相机仍需保持角反序号一致。
+命令行输出：雷达点到对应角点RMSE: xxx m 在厘米级即可，保留误差最小的外参结果即可。
 
-建议使用 Python 3.8+。项目中常用依赖包括：
+运行完成后期望：calib_path 文件夹下 产生 corner_pixels_xxx.pkl, extrinsic_img_to_radar_high.npz, extrinsic_img_to_radar_low.npz
 
-```bash
-pip install numpy opencv-python open3d tqdm torch
-```
+5. [图像2D检测](Img2Keypoint/pipeline.py)
 
-如果需要运行图像关键点检测流程，还需要安装并配置：
+parse_args 中的所有参数修改：
+- data_path 修改示例： 20260702\data_collection
 
-```bash
-pip install mmdet mmpose mmengine
-```
+运行完成后期望：group_xxx\camera results\2D 文件夹下有8台相机的文件夹，文件夹下有数据即可
 
-同时需要准备对应的检测和姿态估计模型配置文件与权重文件。
+6. [图像3D结果获取](Img2Keypoint/batch_reconstruct_postprocess.py)
 
-## 使用示例
+parse_args 中的所有参数修改：
+- data_path 修改示例： 20260702\data_collection
 
-运行图像关键点提取：
+运行完成后期望：group_xxx\camera results\2D 文件夹下有8台相机的文件夹，文件夹下有数据即可
 
-```bash
-python Img2Keypoint/pipeline.py --root_path E:\your_dataset\camera --device cuda:0
-```
-
-运行多传感器可视化：
-
-```bash
-python Vis/display_sensor_results.py
-```
-
-运行前请根据实际数据路径修改脚本中的 `root_path`、`calib_path` 等配置。
-
-## 数据目录约定
-
-项目脚本通常按传感器类型读取数据，常见目录包括：
-
-```text
-dataset_root/
-├── camera/
-├── calib/
-├── robosense/
-├── realsense/
-├── dpct低位机/
-└── dpct高位机/
-```
-
-具体目录名称和文件后缀可在对应脚本中调整，例如 `Vis/display_sensor_results.py` 中的 `sensors` 和 `suffix_map`。
-
-## 输出结果
-
-处理结果一般保存到输入数据目录下的 `results/` 子目录中，例如：
-
-```text
-camera/
-└── results/
-    └── 2D/
-```
-
-其中关键点、检测框等中间结果通常以 `.npz`、`.pkl` 等格式保存。
-
-## 说明
-
-本项目以数据处理为核心，代码按传感器和处理阶段拆分。使用时建议先确认数据路径、时间戳格式和标定文件，再运行对应模块。
+7. [结果检查] 

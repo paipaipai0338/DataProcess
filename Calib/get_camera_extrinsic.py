@@ -30,22 +30,24 @@ DRAW_COLORS = {
 }
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="根据多相机棋盘格图像估计相机外参。")
+    parser.add_argument('--data_path', type=Path, default=Path(r'F:\20260703\data_collection'))
+    parser.add_argument('--save_path', type=Path, default=Path(r'F:\20260703\calib'), help="标定结果保存目录，同时用于读取已有内参文件，默认使用 root_path/calib。")
+    parser.add_argument('--reference_cam', type=str, default="A", help="外参统一到的参考相机编号。")
+    parser.add_argument('--selected_groups', type=int, default=4, help="只使用前 N 个 group 进行外参估计；不填则使用全部 group。")
+    parser.add_argument('--target_valid_frames_per_group_cam', type=int, default=2, help="每个 group、每个相机最多使用的有效棋盘格帧数。")
+    parser.add_argument('--reproj_rmse_threshold', type=float, default=0.5, help="单帧棋盘格 PnP 重投影 RMSE 阈值，超过则剔除。")
+    args = parser.parse_args()
+    return args
+
 def natural_group_sort_key(group_name):
     match = re.search(r"(\d+)$", str(group_name))
     if match:
         return int(match.group(1))
     return str(group_name)
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="根据多相机棋盘格图像估计相机外参。")
-    parser.add_argument('--data_path', type=Path, default=Path(r'G:\20260615\data_collection'), help="外参标定训练数据目录，默认使用 root_path/chessboard/extrinsic/train。")
-    parser.add_argument('--save_path', type=Path, default=Path(r'G:\20260615\calib'), help="标定结果保存目录，同时用于读取已有内参文件，默认使用 root_path/calib。")
-    parser.add_argument('--reference_cam', type=str, default="A", help="外参统一到的参考相机编号。")
-    parser.add_argument('--selected_groups', type=int, default=4, help="只使用前 N 个 group 进行外参估计；不填则使用全部 group。")
-    parser.add_argument('--target_valid_frames_per_group_cam', type=int, default=3, help="每个 group、每个相机最多使用的有效棋盘格帧数。")
-    parser.add_argument('--reproj_rmse_threshold', type=float, default=1.2, help="单帧棋盘格 PnP 重投影 RMSE 阈值，超过则剔除。")
-    args = parser.parse_args()
-    return args
+
 
 # ============================================================
 # Geometry helpers

@@ -156,7 +156,7 @@ def transform_ray_to_reference(ray, calib_path, reference_cam="A"):
             calib_path / f"extrinsic_T_cam_{ray.camera_id}_to_cam_{reference_cam}.npy"
         )
     r = copy.copy(ray)
-    r.origin = ray.origin + t
+    r.origin = R @ ray.origin + t
     r.direction = R @ ray.direction
     return r
 

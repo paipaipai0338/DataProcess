@@ -28,8 +28,8 @@ def str2bool(v):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--root_path', type=Path, default=Path(r"G:\20260615\data_collection\group_011"), help="dataset root")
-    parser.add_argument('--calib_path', type=Path, default=Path(r'G:\20260615\calib'), help="calibration directory, default: root_path/calib")
+    parser.add_argument('--root_path', type=Path, default=Path(r"C:\Users\Administrator\Desktop\20260702\data_collection\group_036"), help="dataset root")
+    parser.add_argument('--calib_path', type=Path, default=Path(r'C:\Users\Administrator\Desktop\20260702\calib'), help="calibration directory, default: root_path/calib")
     parser.add_argument('--reference_cam', type=str, default="A", help="reference camera id")
     parser.add_argument('--result_2D_data_path', type=Path, default=None, help="2D result directory, default: root_path/camera results/2D")
     parser.add_argument('--result_3D_data_path', type=Path, default=None, help="3D output directory, default: root_path/camera results/3D")
@@ -154,7 +154,7 @@ def transform_ray_to_reference(ray, calib_path, reference_cam="A"):
             calib_path / f"extrinsic_T_cam_{ray.camera_id}_to_cam_{reference_cam}.npy"
         )
     r = copy.copy(ray)
-    r.origin = ray.origin + t
+    r.origin = R @ ray.origin + t
     r.direction = R @ ray.direction
     return r
 
@@ -186,7 +186,7 @@ def load_extrinsic_cache(cams, reference_cam, calib_path):
 def transform_ray_to_reference_cached(ray, extrinsic_cache):
     R, t = extrinsic_cache[ray.camera_id]
     r = copy.copy(ray)
-    r.origin = ray.origin + t
+    r.origin = R @ ray.origin + t
     r.direction = R @ ray.direction
     return r
 

@@ -1,3 +1,4 @@
+import argparse
 from itertools import combinations, permutations
 from pathlib import Path
 
@@ -8,6 +9,21 @@ from Img2Points.utils import get_corner_coordinate, get_corner_pixel_from_img
 from RadarProcess.utils import get_corner_data
 from Img2Keypoint.utils import get_gt_data
 from Calib.utils import *
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--device", type=str, default="cuda:0", help="Inference device, e.g. cuda:0 or cpu.")
+    parser.add_argument(
+        "--root_path",
+        type=Path,
+        default=Path(r"F:\20260703\data_collection"),
+        help="Dataset root path, or one group root that contains camera/.",
+    )
+    parser.add_argument("--groups", nargs="*", default=None, help="Group folders to process. If omitted, all group folders are processed.")
+    parser.add_argument("--det_score_thr", type=float, default=0.5, help="Person detection score threshold.")
+    parser.add_argument("--det_model", choices=("large", "tiny"), default="large", help="Detector size. tiny is faster and less accurate.")
+    parser.add_argument("--overwrite", action="store_true", help="Recompute existing npz files.")
+    return parser.parse_args()
 
 
 def estimate_transform(points_src, points_dst):
@@ -342,29 +358,30 @@ def plot_registration(points_src, points_dst, R, t, result):
 
 
 def main():
-    root_path = Path(r'G:\20260615\data_collection\group_009')
-    calib_path = Path(r'G:\20260615\calib')
-    pkl_save_path = calib_path / 'corner_pixels_009.pkl'
+    root_path = Path(r'C:\Users\Administrator\Desktop\20260702\data_collection\group_008')
+    calib_path = Path(r'C:\Users\Administrator\Desktop\20260702\calib')
+    pkl_save_path = calib_path / 'corner_pixels_008.pkl'
+    radar_path = root_path / 'dpct高位机\Bin'
     distance_threshold = 0.3  # meters; increase if radar detections are noisier
     radar_cfar_params = {
-        "ref_range": 9,
-        "ref_velocity": 8,
-        "guard_range": 8,
-        "guard_velocity": 4,
-        "alpha": 15.0,
-        "mode": "ca",
-        # "ref_range": 10,
-        # "ref_velocity": 10,
-        # "guard_range": 4,
+        # "ref_range": 9,
+        # "ref_velocity": 8,
+        # "guard_range": 8,
         # "guard_velocity": 4,
-        # "alpha": 10.0,
+        # "alpha": 15.0,
         # "mode": "ca",
+        "ref_range": 10,
+        "ref_velocity": 10,
+        "guard_range": 4,
+        "guard_velocity": 4,
+        "alpha": 8.0,
+        "mode": "ca",
     }
-    radar_path = root_path / 'dpct低位机\Bin'
+
 
     img_path = root_path / 'camera'
 
-    R_t_save_path = calib_path / 'extrinsic_img_to_radar_low.npz'
+    R_t_save_path = calib_path / 'extrinsic_img_to_radar_high.npz'
 
     '''人工标注像素点'''
     get_corner_pixel_from_img(img_path, pkl_save_path, expected_points=4)
@@ -384,11 +401,11 @@ def main():
     print(f"雷达检测点数: {pc_radar.shape[0]}")
 
     mask = (
-        (pc_radar[:, 0] > 1)
+        (pc_radar[:, 0] > 0.2)
         & (pc_radar[:, 0] < 3)
-        & (pc_radar[:, 1] > -1)
-        & (pc_radar[:, 2] < 0.5)
-        & (pc_radar[:, 2] > -0.6)
+        # & (pc_radar[:, 1] > -1.5)
+        & (pc_radar[:, 2] < 2)
+        & (pc_radar[:, 2] > -3)
     )
 
     pc_radar = pc_radar[mask]

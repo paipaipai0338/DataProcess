@@ -24,10 +24,8 @@ def parse_args():
     parser.add_argument("--device", type=str, default="cuda:0", help="Inference device, e.g. cuda:0 or cpu.")
     parser.add_argument(
         "--data_path",
-        "--root_path",
-        dest="data_path",
         type=Path,
-        default=Path(r"G:\20260615\data_collection"),
+        default=Path(r"F:\20260703\data_collection"),
         help="Dataset root path, or one group root that contains camera/.",
     )
     parser.add_argument("--groups", nargs="*", default=None, help="Group folders to process. If omitted, all group folders are processed.")

@@ -1128,13 +1128,18 @@ def get_corner_data(file_path: Path|str, ref_range: int=6, ref_velocity: int=4, 
     radar_config = Radar_Config()
     # (256, 64, 16)
     data = bin_to_cube_range_fft(str(file_path), radar_config)  # 读取函数
+    if data is None:
+        return {
+            "polar coordinate": np.empty((0, 4), dtype=np.float64),
+            "cartesian coordinate": np.empty((0, 4), dtype=np.float64),
+        }
     range_res, _, _, _ = get_radar_res(radar_config)
     r_axis = np.arange(data.shape[0], dtype=float) * range_res
 
     # 固件风格 TDM Doppler FFT
-    rd_cube, v_axis = doppler_fft(
-        data,
-        radar_config,
+    rd_cube, _, v_axis = doppler_fft(
+        data=data,
+        radar_config=radar_config,
         window=True,
         doppler_mode="firmware_tdm",
     )
@@ -1219,8 +1224,14 @@ def get_corner_data(file_path: Path|str, ref_range: int=6, ref_velocity: int=4, 
         # )
 
 
-    targets["cartesian coordinate"] = np.array(targets["cartesian coordinate"])
-    targets["polar coordinate"] = np.array(targets["polar coordinate"])
+    targets["cartesian coordinate"] = np.asarray(
+        targets["cartesian coordinate"],
+        dtype=np.float64,
+    ).reshape(-1, 4)
+    targets["polar coordinate"] = np.asarray(
+        targets["polar coordinate"],
+        dtype=np.float64,
+    ).reshape(-1, 4)
 
     return targets
 

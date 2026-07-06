@@ -12,72 +12,6 @@ import matplotlib
 import numpy as np
 from tqdm import tqdm
 
-
-SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-# Reconstruction.py forces Qt5Agg at import time for its visual tools. Keep this
-# batch entry on a non-interactive backend while still reusing its compute code.
-matplotlib.use("Agg")
-_MATPLOTLIB_USE = matplotlib.use
-
-
-def _batch_matplotlib_use(backend, *args, **kwargs):
-    if str(backend).lower() == "qt5agg":
-        return None
-    return _MATPLOTLIB_USE(backend, *args, **kwargs)
-
-
-matplotlib.use = _batch_matplotlib_use
-
-try:
-    import open3d  # noqa: F401
-except ModuleNotFoundError:
-    sys.modules["open3d"] = types.ModuleType("open3d")
-
-from Img2Keypoint.Reconstruction import (  # noqa: E402
-    collect_missing_frame_items,
-    init_frame_worker,
-    load_extrinsic_cache,
-    load_intrinsic_cache,
-    reconstruct_and_save_frame_no_debug,
-    reconstruct_and_save_frame_no_debug_global,
-)
-from Img2Keypoint.temporal_postprocess_compare import (  # noqa: E402
-    build_tracked_tensor,
-    frame_list_from_tensor,
-    load_sequence,
-    output_files_complete,
-    process_tracked_tensor,
-    save_sequence,
-)
-from Img2Keypoint.utils import get_matched_pairs  # noqa: E402
-
-
-def str2bool(value):
-    if isinstance(value, bool):
-        return value
-    lowered = str(value).strip().lower()
-    if lowered in ("yes", "true", "t", "1", "y"):
-        return True
-    if lowered in ("no", "false", "f", "0", "n"):
-        return False
-    raise argparse.ArgumentTypeError("Boolean value expected.")
-
-
-@dataclass(frozen=True)
-class GroupJob:
-    name: str
-    root_path: Path
-    camera_path: Path
-    result_2d_path: Path
-    result_3d_path: Path
-    smooth_3d_path: Path
-    calib_path: Path
-
-
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
@@ -90,7 +24,7 @@ def parse_args():
         "--data_path",
         dest="root_path",
         type=Path,
-        default=Path(r'G:\20260615\data_collection'),
+        default=Path(r'F:\20260703\data_collection'),
         help="One group root containing camera/, or a collection root containing group folders.",
     )
     parser.add_argument(
@@ -177,7 +111,7 @@ def parse_args():
     parser.add_argument(
         "--skip_existing",
         type=str2bool,
-        default=False,
+        default=True,
         help="Skip existing raw/smoothed 3D frame files.",
     )
     parser.add_argument(
@@ -187,6 +121,73 @@ def parse_args():
         help="Continue with later groups when one group fails.",
     )
     return parser.parse_args()
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# Reconstruction.py forces Qt5Agg at import time for its visual tools. Keep this
+# batch entry on a non-interactive backend while still reusing its compute code.
+matplotlib.use("Agg")
+_MATPLOTLIB_USE = matplotlib.use
+
+
+def _batch_matplotlib_use(backend, *args, **kwargs):
+    if str(backend).lower() == "qt5agg":
+        return None
+    return _MATPLOTLIB_USE(backend, *args, **kwargs)
+
+
+matplotlib.use = _batch_matplotlib_use
+
+try:
+    import open3d  # noqa: F401
+except ModuleNotFoundError:
+    sys.modules["open3d"] = types.ModuleType("open3d")
+
+from Img2Keypoint.Reconstruction import (  # noqa: E402
+    collect_missing_frame_items,
+    init_frame_worker,
+    load_extrinsic_cache,
+    load_intrinsic_cache,
+    reconstruct_and_save_frame_no_debug,
+    reconstruct_and_save_frame_no_debug_global,
+)
+from Img2Keypoint.temporal_postprocess_compare import (  # noqa: E402
+    build_tracked_tensor,
+    frame_list_from_tensor,
+    load_sequence,
+    output_files_complete,
+    process_tracked_tensor,
+    save_sequence,
+)
+from Img2Keypoint.utils import get_matched_pairs  # noqa: E402
+
+
+def str2bool(value):
+    if isinstance(value, bool):
+        return value
+    lowered = str(value).strip().lower()
+    if lowered in ("yes", "true", "t", "1", "y"):
+        return True
+    if lowered in ("no", "false", "f", "0", "n"):
+        return False
+    raise argparse.ArgumentTypeError("Boolean value expected.")
+
+
+@dataclass(frozen=True)
+class GroupJob:
+    name: str
+    root_path: Path
+    camera_path: Path
+    result_2d_path: Path
+    result_3d_path: Path
+    smooth_3d_path: Path
+    calib_path: Path
+
+
+
 
 
 def group_sort_key(item: Tuple[str, Path]):
