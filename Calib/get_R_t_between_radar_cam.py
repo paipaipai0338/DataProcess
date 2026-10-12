@@ -10,21 +10,6 @@ from RadarProcess.utils import get_corner_data
 from Img2Keypoint.utils import get_gt_data
 from Calib.utils import *
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--device", type=str, default="cuda:0", help="Inference device, e.g. cuda:0 or cpu.")
-    parser.add_argument(
-        "--root_path",
-        type=Path,
-        default=Path(r"F:\20260703\data_collection"),
-        help="Dataset root path, or one group root that contains camera/.",
-    )
-    parser.add_argument("--groups", nargs="*", default=None, help="Group folders to process. If omitted, all group folders are processed.")
-    parser.add_argument("--det_score_thr", type=float, default=0.5, help="Person detection score threshold.")
-    parser.add_argument("--det_model", choices=("large", "tiny"), default="large", help="Detector size. tiny is faster and less accurate.")
-    parser.add_argument("--overwrite", action="store_true", help="Recompute existing npz files.")
-    return parser.parse_args()
-
 
 def estimate_transform(points_src, points_dst):
     """
@@ -360,7 +345,7 @@ def plot_registration(points_src, points_dst, R, t, result):
 def main():
     from pathlib import Path
 
-    root_path = Path(r'F:\20260703\data_collection\group_008')
+    root_path = Path(r'F:\20261009\data_collection\group_006')
     radar_selected = 'high' # low high
 
     group_name = root_path.name  # 'group_008'
@@ -374,7 +359,7 @@ def main():
     elif radar_selected == 'high':
         radar_path = root_path / 'dpct高位机\Bin'
         R_t_save_path = calib_path / 'extrinsic_img_to_radar_high.npz'
-    distance_threshold = 0.3  # meters; increase if radar detections are noisier
+    distance_threshold = 0.4  # meters; increase if radar detections are noisier
     radar_cfar_params = {
         # "ref_range": 9,
         # "ref_velocity": 8,
@@ -382,11 +367,11 @@ def main():
         # "guard_velocity": 4,
         # "alpha": 15.0,
         # "mode": "ca",
-        "ref_range": 10,
-        "ref_velocity": 10,
+        "ref_range": 5,
+        "ref_velocity": 5,
         "guard_range": 4,
         "guard_velocity": 4,
-        "alpha": 8.0,
+        "alpha": 10.0,
         "mode": "ca",
     }
 
@@ -398,7 +383,7 @@ def main():
     get_corner_pixel_from_img(img_path, pkl_save_path, expected_points=4)
 
     '''根据像素点重建3D坐标'''
-    pixel_coordinate, error = get_corner_coordinate(pkl_save_path, calib_path=calib_path)
+    pixel_coordinate, error = get_corner_coordinate(pkl_save_path, calib_path=calib_path, reference_cam="A")
     print(f"重建角点坐标:\n{pixel_coordinate}")
     print(f"重建误差: {error}")
 
@@ -407,16 +392,16 @@ def main():
     if not radar_files:
         raise FileNotFoundError(f"No .bin radar files found in {radar_path}")
     print(f"雷达CFAR参数: {radar_cfar_params}")
-    targets = get_corner_data(radar_files[1], **radar_cfar_params)
+    targets = get_corner_data(radar_files[-10], **radar_cfar_params)
     pc_radar = targets["cartesian coordinate"]
     print(f"雷达检测点数: {pc_radar.shape[0]}")
 
     mask = (
-        (pc_radar[:, 0] > 1.5)
-        & (pc_radar[:, 0] < 4)
+        (pc_radar[:, 0] > 0.3)
+        & (pc_radar[:, 0] < 3)
         # & (pc_radar[:, 1] > -1.5)
         & (pc_radar[:, 2] < 1)
-        & (pc_radar[:, 2] > -3)
+        & (pc_radar[:, 2] > -0.5)
     )
 
     pc_radar = pc_radar[mask]
@@ -436,7 +421,7 @@ def main():
         pixel_coordinate,
         pc_radar,
         distance_threshold=distance_threshold,
-        min_matched_points=4,
+        min_matched_points=3,
     )
     print(f"\n匹配结果: {registration['radar_indices_by_source']}")
     print(f"种子角点索引: {registration['seed_source_indices']}")

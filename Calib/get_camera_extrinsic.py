@@ -16,7 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from Img2Keypoint.utils import load_intrinsic_data
 from Calib.chessboard_detection_helper import (
     detect_chessboard_fullres,
-    check_corners_order_minimal,
+    make_rotations_and_flips,
 )
 
 ROWS, COLS = 24, 24
@@ -32,10 +32,11 @@ DRAW_COLORS = {
 
 def parse_args():
     parser = argparse.ArgumentParser(description="根据多相机棋盘格图像估计相机外参。")
-    parser.add_argument('--data_path', type=Path, default=Path(r'F:\20260703\data_collection'))
-    parser.add_argument('--save_path', type=Path, default=Path(r'F:\20260703\calib'), help="标定结果保存目录，同时用于读取已有内参文件，默认使用 root_path/calib。")
+    parser.add_argument('--data_path', type=Path, default=Path(r'F:\20261008\data_collection'))
+    parser.add_argument('--save_path', type=Path, default=Path(r'F:\20261008\calib_verified'), help="新外参输出目录，不覆盖已有 calib。")
+    parser.add_argument('--intrinsic_path', type=Path, default=None, help='Existing intrinsic directory; defaults to data_path.parent/calib.')
     parser.add_argument('--reference_cam', type=str, default="A", help="外参统一到的参考相机编号。")
-    parser.add_argument('--selected_groups', type=int, default=4, help="只使用前 N 个 group 进行外参估计；不填则使用全部 group。")
+    parser.add_argument('--selected_groups', type=int, default=5, help="只使用前 N 个 group 进行外参估计；不填则使用全部 group。")
     parser.add_argument('--target_valid_frames_per_group_cam', type=int, default=2, help="每个 group、每个相机最多使用的有效棋盘格帧数。")
     parser.add_argument('--reproj_rmse_threshold', type=float, default=0.5, help="单帧棋盘格 PnP 重投影 RMSE 阈值，超过则剔除。")
     args = parser.parse_args()
@@ -173,22 +174,14 @@ def detect_and_estimate_pose(
         bgr=img_bgr,
         rows=rows,
         cols=cols,
-        enable_color_order=True,
+        enable_color_order=False,
         class_method_flag=True,
     )
     if not ok or corners is None:
         return {"status": "detect_fail", "detect_meta": detect_meta}
 
-    ok_order, ordered, color_marks = check_corners_order_minimal(
-        img_bgr, corners, rows=rows, cols=cols
-    )
-    if not ok_order:
-        return {
-            "status": "color_reject",
-            "corners": None,
-            "color_marks": color_marks,
-            "detect_meta": detect_meta,
-        }
+    # Color masks overlap (notably green/blue). Resolve indexing across poses later.
+    ordered, color_marks = corners, {}
 
     ok2, rvec, tvec = cv2.solvePnP(objp, ordered, K, dist, flags=cv2.SOLVEPNP_ITERATIVE)
     if not ok2:
@@ -359,6 +352,72 @@ def compute_joint_frame_rmse(
 # ============================================================
 # Main pipeline
 # ============================================================
+def _board_pose_variants(corners, objp, K, dist):
+    grid = np.asarray(corners, dtype=np.float32).reshape(ROWS, COLS, 2)
+    variants = []
+    grids = make_rotations_and_flips(grid) + make_rotations_and_flips(np.fliplr(grid))
+    for grid_variant in grids:
+        ordered = np.ascontiguousarray(grid_variant.reshape(-1, 1, 2))
+        ok, rvec, tvec = cv2.solvePnP(objp, ordered, K, dist, flags=cv2.SOLVEPNP_ITERATIVE)
+        if ok:
+            T = rvec_tvec_to_T(rvec, tvec)
+            if np.all((objp @ T[:3, :3].T + T[:3, 3])[:, 2] > 0):
+                variants.append((ordered.reshape(-1, 2), T))
+    if not variants:
+        raise ValueError("No positive-depth chessboard pose")
+    return variants
+
+
+def resolve_cross_camera_corner_order(frame_records, intrinsic_cache, objp, reference_cam):
+    """Choose physical corner correspondences by fixed camera poses across groups.
+
+    A board is stationary within each group. Its orientation and position may
+    differ between groups; camera poses must remain constant. A's grid defines
+    each group's numbering, so colored-marker classification is not required.
+    """
+    groups = sorted({group for group, cam in frame_records if cam == reference_cam})
+    if len(groups) < 3:
+        raise ValueError("At least three distinct board poses visible in A are required")
+    reference_poses = {}
+    for group in groups:
+        records = frame_records[(group, reference_cam)]
+        anchor = min(records, key=lambda rec: rec['single_reproj_rmse_px'])
+        reference_poses[group] = anchor['T_cb']
+        K, dist = intrinsic_cache[reference_cam]
+        for rec in records:
+            variants = _board_pose_variants(rec['corners'], objp, K, dist)
+            corners, pose = min(variants, key=lambda item: project_rmse_from_T(
+                objp, item[0], reference_poses[group], K, dist)[0])
+            rec['corners'], rec['T_cb'] = corners, pose
+
+    def distance(a, b):
+        # Scales only rank symmetry hypotheses; final acceptance uses pixel RMSE.
+        return rot_err_deg(a[:3, :3], b[:3, :3]) / 5.0 + trans_err_m(a, b) / 0.1
+
+    cams = sorted({cam for group, cam in frame_records if cam != reference_cam})
+    for cam in cams:
+        K, dist = intrinsic_cache[cam]
+        alternatives = []
+        for group in groups:
+            for rec in frame_records.get((group, cam), []):
+                variants = [(reference_poses[group] @ T_inv(pose), corners, pose)
+                            for corners, pose in _board_pose_variants(rec['corners'], objp, K, dist)]
+                alternatives.append((group, rec, variants))
+        if len({group for group, _, _ in alternatives}) < 3:
+            raise ValueError(f"Camera {cam} needs at least three common board poses with {reference_cam}")
+        seeds = [item[0] for _, _, variants in alternatives for item in variants]
+        seed = min(seeds, key=lambda T: sum(min(distance(T, item[0]) for item in variants)
+                                            for _, _, variants in alternatives))
+        for _ in range(2):
+            choices = [min(variants, key=lambda item: distance(seed, item[0]))
+                       for _, _, variants in alternatives]
+            seed = fuse_Ts_so3([item[0] for item in choices])
+        for (group, rec, _), (_, corners, pose) in zip(alternatives, choices):
+            rec['corners'], rec['T_cb'] = corners, pose
+        print(f"[order] camera={cam} groups={len({g for g, _, _ in alternatives})} "
+              f"max_pose_disagreement={max(distance(seed, item[0]) for item in choices):.4f}")
+
+
 def get_camera_extrinsic(
     data_path,
     save_path,
@@ -366,12 +425,15 @@ def get_camera_extrinsic(
     reference_cam="A",
     target_valid_frames_per_group_cam=5,
     reproj_rmse_threshold=1.2,
+    detected_records=None,
+    intrinsic_path=None,
 ):
     data_path = Path(data_path)
     save_path = Path(save_path)
     save_path.mkdir(parents=True, exist_ok=True)
+    intrinsic_path = Path(intrinsic_path) if intrinsic_path is not None else data_path.parent / "calib"
 
-    objp = np.zeros((ROWS * COLS, 3), np.float32)
+    objp = np.zeros((ROWS * COLS, 3), np.float64)
     objp[:, :2] = np.mgrid[0:COLS, 0:ROWS].T.reshape(-1, 2)
     objp *= SQUARE
 
@@ -395,7 +457,7 @@ def get_camera_extrinsic(
     def get_intrinsic(cam_name):
         if cam_name not in intrinsic_cache:
             intrinsic_cache[cam_name] = load_intrinsic_data(
-                save_path / f"intrinsic_cam_{cam_name}.npz"
+                intrinsic_path / f"intrinsic_cam_{cam_name}.npz"
             )
         return intrinsic_cache[cam_name]
 
@@ -405,96 +467,103 @@ def get_camera_extrinsic(
     # ------------------------------------------------------------
     # Step 1. 单帧检测 + 单帧筛选
     # ------------------------------------------------------------
-    for gpath in group_dirs:
-        group_name = gpath.name
-        gpath = Path(gpath) / 'camera'
-        cam_dirs = sorted([p for p in gpath.iterdir() if p.is_dir() and p.name.startswith("cam_")])
-        print(f"\n=== Processing group {group_name} ===")
+    if detected_records is not None:
+        frame_records.update(detected_records)
+        for _, cam in frame_records:
+            get_intrinsic(cam)
+    else:
+        for gpath in group_dirs:
+            group_name = gpath.name
+            gpath = Path(gpath) / 'camera'
+            cam_dirs = sorted([p for p in gpath.iterdir() if p.is_dir() and p.name.startswith("cam_")])
+            print(f"\n=== Processing group {group_name} ===")
 
-        for cpath in cam_dirs:
+            for cpath in cam_dirs:
 
-            cam_name = cpath.name.split("_", 1)[1]
-            print('Cam:{}'.format(cam_name))
-            frames_path = cpath / "frames"
-            imgs = sorted([
-                p for p in frames_path.iterdir()
-                if p.is_file() and p.suffix.lower() in [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"]
-            ]) if frames_path.exists() else []
-            if not imgs:
-                continue
-            random.shuffle(imgs)
-
-            K, dist = get_intrinsic(cam_name)
-            ok_count = 0
-            status_counts = defaultdict(int)
-
-            for idx, img_path in enumerate(imgs):
-                if ok_count >= target_valid_frames_per_group_cam:
-                    break
-
-                img_bgr = cv2.imread(str(img_path), cv2.IMREAD_COLOR)
-                gray = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
-                if img_bgr is None or gray is None:
-                    status_counts["read_fail"] += 1
-                    print("idx:{} / valid:{} / status:read_fail / file:{}".format(idx, ok_count, img_path.name))
+                cam_name = cpath.name.split("_", 1)[1]
+                print('Cam:{}'.format(cam_name))
+                frames_path = cpath / "frames"
+                imgs = sorted([
+                    p for p in frames_path.iterdir()
+                    if p.is_file() and p.suffix.lower() in [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"]
+                ]) if frames_path.exists() else []
+                if not imgs:
                     continue
+                random.shuffle(imgs)
 
-                result = detect_and_estimate_pose(
-                    img_bgr=img_bgr,
-                    gray=gray,
-                    K=K,
-                    dist=dist,
-                    objp=objp,
-                    rows=ROWS,
-                    cols=COLS,
-                )
-                if result["status"] != "ok":
-                    status_counts[result["status"]] += 1
-                    print("idx:{} / valid:{} / status:{} / file:{}".format(
-                        idx, ok_count, result["status"], img_path.name
+                K, dist = get_intrinsic(cam_name)
+                ok_count = 0
+                status_counts = defaultdict(int)
+
+                for idx, img_path in enumerate(imgs):
+                    if ok_count >= target_valid_frames_per_group_cam:
+                        break
+
+                    img_bgr = cv2.imread(str(img_path), cv2.IMREAD_COLOR)
+                    gray = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
+                    if img_bgr is None or gray is None:
+                        status_counts["read_fail"] += 1
+                        print("idx:{} / valid:{} / status:read_fail / file:{}".format(idx, ok_count, img_path.name))
+                        continue
+
+                    result = detect_and_estimate_pose(
+                        img_bgr=img_bgr,
+                        gray=gray,
+                        K=K,
+                        dist=dist,
+                        objp=objp,
+                        rows=ROWS,
+                        cols=COLS,
+                    )
+                    if result["status"] != "ok":
+                        status_counts[result["status"]] += 1
+                        print("idx:{} / valid:{} / status:{} / file:{}".format(
+                            idx, ok_count, result["status"], img_path.name
+                        ))
+                        continue
+
+                    if result["rmse"] > reproj_rmse_threshold:
+                        status_counts["rmse_reject"] += 1
+                        print("idx:{} / valid:{} / status:rmse_reject / rmse:{:.3f} / file:{}".format(
+                            idx, ok_count, float(result["rmse"]), img_path.name
+                        ))
+                        continue
+
+                    frame_name = Path(img_path).stem
+                    rec = {
+                        "group": group_name,
+                        "cam": cam_name,
+                        "imgpath": img_path,
+                        "frame_name": frame_name,
+                        "T_cb": result["T_cb"],                       # board -> cam
+                        "corners": result["corners"].reshape(-1, 2), # 颜色矫正后的角点
+                        "color_marks": result["color_marks"],
+                        "single_reproj_rmse_px": float(result["rmse"]),
+                    }
+                    frame_records[(group_name, cam_name)].append(rec)
+                    ok_count += 1
+                    status_counts["ok"] += 1
+                    meta = result.get("detect_meta") or {}
+                    print("idx:{} / valid:{} / status:ok / rmse:{:.3f} / method:{} / prep:{} / scale:{} / file:{}".format(
+                        idx,
+                        ok_count,
+                        float(result["rmse"]),
+                        meta.get("method", ""),
+                        meta.get("prep", ""),
+                        meta.get("scale", ""),
+                        img_path.name,
                     ))
-                    continue
 
-                if result["rmse"] > reproj_rmse_threshold:
-                    status_counts["rmse_reject"] += 1
-                    print("idx:{} / valid:{} / status:rmse_reject / rmse:{:.3f} / file:{}".format(
-                        idx, ok_count, float(result["rmse"]), img_path.name
-                    ))
-                    continue
-
-                frame_name = Path(img_path).stem
-                rec = {
-                    "group": group_name,
-                    "cam": cam_name,
-                    "imgpath": img_path,
-                    "frame_name": frame_name,
-                    "T_cb": result["T_cb"],                       # board -> cam
-                    "corners": result["corners"].reshape(-1, 2), # 颜色矫正后的角点
-                    "color_marks": result["color_marks"],
-                    "single_reproj_rmse_px": float(result["rmse"]),
-                }
-                frame_records[(group_name, cam_name)].append(rec)
-                ok_count += 1
-                status_counts["ok"] += 1
-                meta = result.get("detect_meta") or {}
-                print("idx:{} / valid:{} / status:ok / rmse:{:.3f} / method:{} / prep:{} / scale:{} / file:{}".format(
-                    idx,
-                    ok_count,
-                    float(result["rmse"]),
-                    meta.get("method", ""),
-                    meta.get("prep", ""),
-                    meta.get("scale", ""),
-                    img_path.name,
-                ))
-
-            if status_counts:
-                summary = ", ".join(
-                    "{}:{}".format(k, status_counts[k])
-                    for k in sorted(status_counts.keys())
-                )
-                print("[Detect summary] group {} cam {} -> {}".format(group_name, cam_name, summary))
+                if status_counts:
+                    summary = ", ".join(
+                        "{}:{}".format(k, status_counts[k])
+                        for k in sorted(status_counts.keys())
+                    )
+                    print("[Detect summary] group {} cam {} -> {}".format(group_name, cam_name, summary))
 
     all_groups = sorted({g for (g, _) in frame_records.keys()}, key=natural_group_sort_key)
+    resolve_cross_camera_corner_order(frame_records, intrinsic_cache, objp, reference_cam)
+
     all_cam_names = sorted({cam for (_, cam) in frame_records.keys()})
     non_ref_cams = [c for c in all_cam_names if c != reference_cam]
 
@@ -604,59 +673,32 @@ def get_camera_extrinsic(
     )
 
     # ------------------------------------------------------------
-    # Step 4. 保存最终外参
+    # Step 4. Validate before saving, and retain a per-frame reprojection report.
     # ------------------------------------------------------------
+    report_rows = []
+    for group_name in valid_groups:
+        for cam_name in [reference_cam] + usable_cams:
+            for rec in frame_records.get((group_name, cam_name), []):
+                rmse, _ = compute_joint_frame_rmse(
+                    group_name, cam_name, rec, cam_to_ref_opt, board_to_ref_opt,
+                    intrinsic_cache, objp, reference_cam,
+                )
+                report_rows.append(dict(group=group_name, camera=cam_name,
+                                        frame=rec['frame_name'],
+                                        single_rmse_px=rec['single_reproj_rmse_px'],
+                                        joint_rmse_px=float(rmse)))
+    if not opt.success or not report_rows or any(
+        not np.isfinite(row['joint_rmse_px']) or row['joint_rmse_px'] > 1.5 for row in report_rows
+    ):
+        raise RuntimeError("Calibration failed joint reprojection validation; no extrinsics saved")
     for cam_name in usable_cams:
-        T_opt = cam_to_ref_opt[cam_name]
-        np.save(
-            save_path / f"extrinsic_T_cam_{cam_name}_to_cam_{reference_cam}.npy",
-            T_opt,
-        )
-
-        for group_name in valid_groups:
-            T_ref_board_group_init = group_ref_board_init[group_name]
-            T_ref_board_group_opt = board_to_ref_opt[group_name]
-
-            for cam_name in usable_cams:
-                recs = frame_records.get((group_name, cam_name), [])
-                if len(recs) == 0:
-                    continue
-                if (group_name, cam_name) not in group_cam_board_init:
-                    continue
-
-                T_group = T_ref_board_group_init @ T_inv(group_cam_board_init[(group_name, cam_name)])
-                T_joint = cam_to_ref_opt[cam_name]
-
-                K, dist = intrinsic_cache[cam_name]
-
-                # 当前组初始化重投影
-                T_cam_board_pred_group = T_inv(T_group) @ T_ref_board_group_init
-
-                for rec in recs:
-                    T_single = T_ref_board_group_init @ T_inv(rec["T_cb"])
-
-                    rot_err_group = rot_err_deg(T_group[:3, :3], T_single[:3, :3])
-                    trans_err_group = trans_err_m(T_group, T_single)
-
-                    rot_err_joint = rot_err_deg(T_joint[:3, :3], T_single[:3, :3])
-                    trans_err_joint = trans_err_m(T_joint, T_single)
-
-                    group_reproj_rmse_px, _ = project_rmse_from_T(
-                        objp, rec["corners"], T_cam_board_pred_group, K, dist
-                    )
-
-                    joint_reproj_rmse_px, _ = compute_joint_frame_rmse(
-                        group_name=group_name,
-                        cam_name=cam_name,
-                        rec=rec,
-                        cam_to_ref_opt=cam_to_ref_opt,
-                        board_to_ref_opt=board_to_ref_opt,
-                        intrinsic_cache=intrinsic_cache,
-                        objp=objp,
-                        reference_cam=reference_cam,
-                    )
-
-    print(f"[INFO] extrinsic npy saved to: {save_path}")
+        np.save(save_path / f"extrinsic_T_cam_{cam_name}_to_cam_{reference_cam}.npy", cam_to_ref_opt[cam_name])
+    with (save_path / 'camera_extrinsic_validation.csv').open('w', newline='', encoding='utf-8') as output:
+        writer = csv.DictWriter(output, fieldnames=list(report_rows[0]))
+        writer.writeheader()
+        writer.writerows(report_rows)
+    print(f"[INFO] extrinsics saved to: {save_path}; "
+          f"max joint RMSE={max(row['joint_rmse_px'] for row in report_rows):.3f}px")
 
 
 def load_extrinsic_data(file_full_path):
@@ -674,6 +716,7 @@ if __name__ == "__main__":
         save_path=args.save_path,
         selected_groups=args.selected_groups,
         reference_cam=args.reference_cam,
+        intrinsic_path=args.intrinsic_path,
         target_valid_frames_per_group_cam=args.target_valid_frames_per_group_cam,
         reproj_rmse_threshold=args.reproj_rmse_threshold,
     )

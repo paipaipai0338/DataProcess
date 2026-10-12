@@ -506,6 +506,7 @@ def get_corner_coordinate(
     calib_path: Path,
     min_rays: int = 2,
     max_ray_error: float = 0.05,
+    reference_cam: str = "A",
 ) -> Tuple[np.ndarray, dict]:
     with open(pkl_save_path, 'rb') as f:
         data = pickle.load(f)
@@ -535,7 +536,7 @@ def get_corner_coordinate(
             pixel_id=pixel_id,
             corner_rays=corner_rays,
             calib_path=calib_path,
-            reference_cam="A",
+            reference_cam=reference_cam,
             min_rays=min_rays,
             max_ray_error=max_ray_error,
         )

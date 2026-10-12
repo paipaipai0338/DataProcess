@@ -24,7 +24,7 @@ def parse_args():
         "--data_path",
         dest="root_path",
         type=Path,
-        default=Path(r'F:\20260703\data_collection'),
+        default=Path(r'F:\20261010\data_collection'),
         help="One group root containing camera/, or a collection root containing group folders.",
     )
     parser.add_argument(

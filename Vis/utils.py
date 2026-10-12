@@ -44,6 +44,16 @@ def _add_multi_sensor_geometries(vis, data, colors, reset_bounding_box=True):
         if points.shape[-1] != 3:
             points = points[..., :3]
 
+        if name == "gt_boxes":
+            edges = [(i, i ^ step) for i in range(8) for step in (1, 2, 4) if i < (i ^ step)]
+            for corners in points:
+                line_set = o3d.geometry.LineSet()
+                line_set.points = o3d.utility.Vector3dVector(corners)
+                line_set.lines = o3d.utility.Vector2iVector(edges)
+                line_set.paint_uniform_color(colors.get(name, [0.1, 0.8, 0.2]))
+                _add_geometry(vis, line_set, reset_bounding_box=reset_bounding_box)
+            continue
+
         if name == "gt":
             if points.ndim == 2:
                 max_index = max(max(pair) for pair in COCO17_SKELETON) + 1

@@ -28,13 +28,13 @@ def parse_args():
     parser.add_argument(
         "--data_path",
         type=Path,
-        default=Path(r"C:\Users\Administrator\Desktop\20260702\data_collection\group_005"),
+        default=Path(r"F:\20261008\data_collection\group_005"),
         help="用于外参检查的一组数据目录；可为 group_xxx、group_xxx/camera，或包含多个 group_xxx 的父目录。",
     )
     parser.add_argument(
         "--calib_path",
         type=Path,
-        default=Path(r"C:\Users\Administrator\Desktop\20260702\calib"),
+        default=Path(r"F:\20261008\calib"),
         help="标定文件目录，包含 intrinsic_cam_*.npz 和 extrinsic_T_cam_*_to_cam_*.npy。",
     )
     parser.add_argument("--reference_cam", type=str, default="A", help="外参参考相机编号。")

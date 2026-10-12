@@ -28,8 +28,8 @@ def str2bool(v):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--root_path', type=Path, default=Path(r"C:\Users\Administrator\Desktop\20260702\data_collection\group_036"), help="dataset root")
-    parser.add_argument('--calib_path', type=Path, default=Path(r'C:\Users\Administrator\Desktop\20260702\calib'), help="calibration directory, default: root_path/calib")
+    parser.add_argument('--root_path', type=Path, default=Path(r"F:\20261008\data_collection\group_013"), help="dataset root")
+    parser.add_argument('--calib_path', type=Path, default=Path(r'F:\20261008\calib'), help="calibration directory, default: root_path/calib")
     parser.add_argument('--reference_cam', type=str, default="A", help="reference camera id")
     parser.add_argument('--result_2D_data_path', type=Path, default=None, help="2D result directory, default: root_path/camera results/2D")
     parser.add_argument('--result_3D_data_path', type=Path, default=None, help="3D output directory, default: root_path/camera results/3D")
@@ -48,8 +48,8 @@ def parse_args():
     parser.add_argument('--verbose_every', type=int, default=100, help="progress print interval")
 
     parser.add_argument('--num_workers', type=int, default=8, help="number of worker processes")
-    parser.add_argument('--parallel_chunksize', type=int, default=8, help="chunksize for process-pool map")
-    parser.add_argument('--show_final_vis', type=str2bool, default=False, help="show final 3D visualization after saving")
+    parser.add_argument('--parallel_chunksize', type=int, default=1, help="chunksize for process-pool map")
+    parser.add_argument('--show_final_vis', type=str2bool, default=True, help="show final 3D visualization after saving")
     parser.add_argument('--skip_existing', type=str2bool, default=False, help="skip frames whose 3D pkl already exists")
     args = parser.parse_args()
     if args.root_path is None and any(
@@ -1380,6 +1380,26 @@ def compute_pairwise_person_error(
         min_valid_joints=3,
     )
 
+def _rank_matching_anchors(person_counts, ray_table, reference_cam, score_threshold):
+    """Rank cameras with the most people by usable joints, then confidence."""
+    max_people = max(person_counts.values(), default=0)
+    candidates = [cam for cam, count in person_counts.items() if count == max_people and count > 0]
+
+    def rank(cam):
+        valid_count = 0
+        score_sum = 0.0
+        for person in ray_table.get(cam, {}).values():
+            valid = (person['valid'] & np.isfinite(person['scores'])
+                     & (person['scores'] > score_threshold)
+                     & np.isfinite(person['origins']).all(axis=1)
+                     & np.isfinite(person['directions']).all(axis=1))
+            valid_count += int(valid.sum())
+            score_sum += float(person['scores'][valid].sum())
+        return (-valid_count, -score_sum, cam != reference_cam, cam)
+
+    return sorted(candidates, key=rank)
+
+
 def get_3D_keypoints_from_rays_ref_guided(
     rays,
     frame_id,
@@ -1444,18 +1464,11 @@ def get_3D_keypoints_from_rays_ref_guided(
         coordinates[frame_id] = np.empty((0, 17, 3), dtype=float)
         return coordinates, [], []
 
-    max_person_count = max(person_counts.get(cam_id, 0) for cam_id in active_person_cams)
-    if person_counts.get(reference_cam, 0) > 0 and person_counts.get(reference_cam, 0) == max_person_count:
-        ref_cam_for_matching = reference_cam
-    else:
-        ref_cam_for_matching = sorted(
-            active_person_cams,
-            key=lambda cam_id: (-person_counts.get(cam_id, 0), cam_id)
-        )[0]
-
-    ref_person_ids = person_ids_by_cam[ref_cam_for_matching]
+    matching_anchor_cams = _rank_matching_anchors(
+        person_counts, ray_table, reference_cam, score_threshold
+    )
     num_person_estimated = estimate_num_person_from_counts(person_counts, active_cams)
-    max_selected_persons = len(ref_person_ids)
+    max_selected_persons = person_counts[matching_anchor_cams[0]]
     exhaustive_theory_count = estimate_exhaustive_combination_count(
         person_counts,
         active_cams,
@@ -1487,112 +1500,117 @@ def get_3D_keypoints_from_rays_ref_guided(
     min_candidate_valid_joints = max(int(min_candidate_valid_joints), 1)
     support_aware_sort = bool(support_aware_sort)
 
-    for ref_person_id in ref_person_ids:
-        candidate_ids_by_cam = {}
+    # Geometry may reject even a confident anchor; reuse the ray table for fallback.
+    for ref_cam_for_matching in matching_anchor_cams:
+        for ref_person_id in person_ids_by_cam[ref_cam_for_matching]:
+            candidate_ids_by_cam = {}
 
-        for target_cam in output_cams:
-            if target_cam == ref_cam_for_matching:
-                candidate_ids_by_cam[target_cam] = [ref_person_id]
-                continue
+            for target_cam in output_cams:
+                if target_cam == ref_cam_for_matching:
+                    candidate_ids_by_cam[target_cam] = [ref_person_id]
+                    continue
 
-            target_person_ids = person_ids_by_cam.get(target_cam, [])
-            target_count = len(target_person_ids)
-            candidates = []
-            best_pairwise_error = np.inf
+                target_person_ids = person_ids_by_cam.get(target_cam, [])
+                target_count = len(target_person_ids)
+                candidates = []
+                best_pairwise_error = np.inf
 
-            if target_count > 0:
-                pairwise_errors = []
-                for target_person_id in target_person_ids:
-                    pair_error = compute_pairwise_ray_distance_error_np(
-                        ray_table,
-                        ref_cam_for_matching,
-                        ref_person_id,
-                        target_cam,
-                        target_person_id,
-                        score_threshold=score_threshold,
-                        min_valid_joints=3,
-                    )
-                    pairwise_cost_count += 1
-                    if np.isfinite(pair_error):
-                        pairwise_errors.append((pair_error, target_person_id))
+                if target_count > 0:
+                    pairwise_errors = []
+                    for target_person_id in target_person_ids:
+                        pair_error = compute_pairwise_ray_distance_error_np(
+                            ray_table,
+                            ref_cam_for_matching,
+                            ref_person_id,
+                            target_cam,
+                            target_person_id,
+                            score_threshold=score_threshold,
+                            min_valid_joints=3,
+                        )
+                        pairwise_cost_count += 1
+                        if np.isfinite(pair_error):
+                            pairwise_errors.append((pair_error, target_person_id))
 
-                pairwise_errors.sort(key=lambda item: (item[0], item[1]))
-                if len(pairwise_errors) > 0:
-                    best_pairwise_error = float(pairwise_errors[0][0])
-                if pairwise_candidate_error_m > 0:
-                    pairwise_errors = [
-                        item for item in pairwise_errors
-                        if item[0] <= pairwise_candidate_error_m
-                    ]
-                candidates = [person_id for _, person_id in pairwise_errors[:top_k_pairwise]]
+                    pairwise_errors.sort(key=lambda item: (item[0], item[1]))
+                    if len(pairwise_errors) > 0:
+                        best_pairwise_error = float(pairwise_errors[0][0])
+                    if pairwise_candidate_error_m > 0:
+                        pairwise_errors = [
+                            item for item in pairwise_errors
+                            if item[0] <= pairwise_candidate_error_m
+                        ]
+                    candidates = [person_id for _, person_id in pairwise_errors[:top_k_pairwise]]
 
-            should_add_none = target_count < num_person_estimated
-            if pairwise_none_error_m > 0:
-                should_add_none = should_add_none or (not np.isfinite(best_pairwise_error))
-                should_add_none = should_add_none or (best_pairwise_error > pairwise_none_error_m)
+                should_add_none = target_count < num_person_estimated
+                if pairwise_none_error_m > 0:
+                    should_add_none = should_add_none or (not np.isfinite(best_pairwise_error))
+                    should_add_none = should_add_none or (best_pairwise_error > pairwise_none_error_m)
 
-            if should_add_none and None not in candidates:
-                candidates.append(None)
-            if len(candidates) == 0:
-                candidates = [None]
+                if should_add_none and None not in candidates:
+                    candidates.append(None)
+                if len(candidates) == 0:
+                    candidates = [None]
 
-            candidate_ids_by_cam[target_cam] = candidates
+                candidate_ids_by_cam[target_cam] = candidates
 
-        for combination in iter_pruned_combinations(
-            candidate_ids_by_cam,
-            output_cams,
-            active_person_cams,
-            min_support_cams,
-            max_missing_cams,
-        ):
-            generated_combination_count += 1
+            for combination in iter_pruned_combinations(
+                candidate_ids_by_cam,
+                output_cams,
+                active_person_cams,
+                min_support_cams,
+                max_missing_cams,
+            ):
+                generated_combination_count += 1
 
-            support_cam_count = sum(1 for person_id in combination if person_id is not None)
-            missing_count = sum(
-                1
-                for camera_id, person_id in zip(output_cams, combination)
-                if camera_id in active_person_cams and person_id is None
-            )
-            kept_after_missing_limit += 1
+                support_cam_count = sum(1 for person_id in combination if person_id is not None)
+                missing_count = sum(
+                    1
+                    for camera_id, person_id in zip(output_cams, combination)
+                    if camera_id in active_person_cams and person_id is None
+                )
+                kept_after_missing_limit += 1
 
-            candidate_rays = collect_combination_rays(ray_index, output_cams, combination)
-            if len(candidate_rays) < 2:
-                continue
+                candidate_rays = collect_combination_rays(ray_index, output_cams, combination)
+                if len(candidate_rays) < 2:
+                    continue
 
-            kpts3D, total_error, joint_errors, per_cam_error = calculate_human_3D_coordinate(
-                candidate_rays,
-                score_threshold=score_threshold,
-            )
-            valid_mask = np.all(np.isfinite(kpts3D), axis=1)
-            valid_joint_count = int(np.sum(valid_mask))
+                kpts3D, total_error, joint_errors, per_cam_error = calculate_human_3D_coordinate(
+                    candidate_rays,
+                    score_threshold=score_threshold,
+                )
+                valid_mask = np.all(np.isfinite(kpts3D), axis=1)
+                valid_joint_count = int(np.sum(valid_mask))
 
-            # Gate 1: a candidate must reconstruct enough valid joints.
-            if valid_joint_count < min_candidate_valid_joints:
-                rejected_by_valid_joints += 1
-                continue
+                # Gate 1: a candidate must reconstruct enough valid joints.
+                if valid_joint_count < min_candidate_valid_joints:
+                    rejected_by_valid_joints += 1
+                    continue
 
-            # Gate 2: total_error is mean ray-to-3D-point perpendicular distance
-            # over valid joints. With meter-scale extrinsic, 0.10 means 10 cm.
-            if not np.isfinite(total_error):
-                rejected_by_ray_error += 1
-                continue
+                # Gate 2: total_error is mean ray-to-3D-point perpendicular distance
+                # over valid joints. With meter-scale extrinsic, 0.10 means 10 cm.
+                if not np.isfinite(total_error):
+                    rejected_by_ray_error += 1
+                    continue
 
-            ray_error_thresh = max_candidate_ray_error_m
-            if support_cam_count <= 2 and strict_two_cam_ray_error_m > 0:
-                ray_error_thresh = min(ray_error_thresh, strict_two_cam_ray_error_m)
+                ray_error_thresh = max_candidate_ray_error_m
+                if support_cam_count <= 2 and strict_two_cam_ray_error_m > 0:
+                    ray_error_thresh = min(ray_error_thresh, strict_two_cam_ray_error_m)
 
-            if ray_error_thresh > 0 and float(total_error) > ray_error_thresh:
-                rejected_by_ray_error += 1
-                continue
+                if ray_error_thresh > 0 and float(total_error) > ray_error_thresh:
+                    rejected_by_ray_error += 1
+                    continue
 
-            final_valid_candidate_count += 1
-            candidate_coordinates.append(kpts3D)
-            candidate_errors.append(float(total_error))
-            candidate_combinations.append(tuple(combination))
-            candidate_per_cam_errors.append(per_cam_error)
-            candidate_support_counts.append(support_cam_count)
-            candidate_missing_counts.append(missing_count)
-            candidate_valid_joint_counts.append(valid_joint_count)
+                final_valid_candidate_count += 1
+                candidate_coordinates.append(kpts3D)
+                candidate_errors.append(float(total_error))
+                candidate_combinations.append(tuple(combination))
+                candidate_per_cam_errors.append(per_cam_error)
+                candidate_support_counts.append(support_cam_count)
+                candidate_missing_counts.append(missing_count)
+                candidate_valid_joint_counts.append(valid_joint_count)
+
+        if candidate_coordinates:
+            break
 
     used_pairs = set()
     if support_aware_sort:

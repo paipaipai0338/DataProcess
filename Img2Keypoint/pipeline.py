@@ -25,7 +25,7 @@ def parse_args():
     parser.add_argument(
         "--data_path",
         type=Path,
-        default=Path(r"F:\20260703\data_collection"),
+        default=Path(r"F:\20260720\data_collection"),
         help="Dataset root path, or one group root that contains camera/.",
     )
     parser.add_argument("--groups", nargs="*", default=None, help="Group folders to process. If omitted, all group folders are processed.")
