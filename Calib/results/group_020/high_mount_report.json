@@ -1,0 +1,421 @@
+{
+  "method": "SVD correspondence screening followed by soft installation priors",
+  "convention": "p_high = R_est @ p_camera_A + t_est; p_low = R_high_to_low @ p_high + t_high_to_low",
+  "units": "metres; degrees",
+  "low_extrinsic_sha256": "f467b63cc2beb60a8091b9caea4ddbbf51100330a4844f8f4c601dd051255a7a",
+  "cfar": {
+    "ref_range": 5,
+    "ref_velocity": 5,
+    "guard_range": 4,
+    "guard_velocity": 4,
+    "alpha": 15.0,
+    "mode": "ca"
+  },
+  "static_roi": "0.7 < X < 3, abs(Z) < 2, abs(velocity) < 0.01 m/s",
+  "cluster_linkage_m": 0.18,
+  "minimum_training_frame_support": 0.8,
+  "priors": {
+    "low_height_m": 1.0,
+    "high_height_m": 2.37,
+    "height_difference_m": 1.37,
+    "downward_pitch_deg": 46.0,
+    "xyz_sigma_m": 0.1,
+    "height_difference_sigma_m": 0.2,
+    "pitch_sigma_deg": 5.0,
+    "roll_sigma_deg": 10.0,
+    "note": "Roll near zero is a weak modeling assumption; yaw and XY are estimated freely."
+  },
+  "screens": {
+    "pitch_deviation_deg": 15,
+    "maximum_roll_deg": 20,
+    "height_deviation_m": 0.4,
+    "maximum_three_target_rmse_m": 0.2
+  },
+  "screened_match_count": 1,
+  "rejected_match_counts": {
+    "mount": 465,
+    "residual": 14
+  },
+  "screened_matches": [
+    {
+      "source_ids": [
+        0,
+        1,
+        2
+      ],
+      "target_ids": [
+        3,
+        5,
+        4
+      ],
+      "initial_rmse_m": 0.11643842991714941,
+      "parameters": [
+        18.212034603779827,
+        43.81351804231323,
+        -10.301939636719007,
+        0.14786185347702618,
+        -0.6854643496324205,
+        1.5450609444226306
+      ],
+      "cost": 6.086058481862473
+    }
+  ],
+  "persistent_high_centers": [
+    [
+      1.032449378081141,
+      0.25701679355430546,
+      -1.0207094381683832
+    ],
+    [
+      0.7856247820589098,
+      -0.019835515696435553,
+      -0.922693569012934
+    ],
+    [
+      2.6047509864065304,
+      -0.09138150519322541,
+      -0.9521279462579135
+    ],
+    [
+      2.0244746639025077,
+      -0.42223861363636334,
+      -0.631758312227264
+    ],
+    [
+      2.1587709530365036,
+      0.5273340969937776,
+      0.05942888839447649
+    ],
+    [
+      1.9187394393683201,
+      0.20253331124180507,
+      -0.26544606089518924
+    ]
+  ],
+  "matched_source_ids": [
+    0,
+    1,
+    2
+  ],
+  "selected_centers": [
+    [
+      2.0244746639025077,
+      -0.42223861363636334,
+      -0.631758312227264
+    ],
+    [
+      1.9187394393683201,
+      0.20253331124180507,
+      -0.26544606089518924
+    ],
+    [
+      2.1587709530365036,
+      0.5273340969937776,
+      0.05942888839447649
+    ]
+  ],
+  "unmatched_source_ids": [
+    3
+  ],
+  "high_origin_in_low_m": [
+    0.215464120887326,
+    -0.8138416247507769,
+    1.538791969396765
+  ],
+  "high_to_low_euler_ZYX_deg": [
+    23.282150030904376,
+    44.41662377494856,
+    -3.83899273111746
+  ],
+  "assumed_low_height_implied_high_height_m": 2.5387919693967653,
+  "assumed_high_height_implied_low_height_m": 0.831208030603235,
+  "height_prior_residual_m": 0.168791969396765,
+  "R_est": [
+    [
+      0.8035876898371522,
+      0.5757286141016734,
+      0.15094166968321038
+    ],
+    [
+      0.022314280216237232,
+      -0.2825683251817538,
+      0.9589875987219078
+    ],
+    [
+      0.5947679359553784,
+      -0.7672624743257975,
+      -0.23991539727752917
+    ]
+  ],
+  "t_est": [
+    2.743894103087265,
+    -2.7827838024618794,
+    1.790224138160511
+  ],
+  "R_high_to_low": [
+    [
+      0.6561063614672493,
+      -0.43741513663491777,
+      0.6149735284423745
+    ],
+    [
+      0.2823217573313454,
+      0.8979871999145881,
+      0.33751061335445304
+    ],
+    [
+      -0.6998706078837349,
+      -0.04782245322246048,
+      0.7126669244382242
+    ]
+  ],
+  "t_high_to_low": [
+    0.215464120887326,
+    -0.8138416247507769,
+    1.538791969396765
+  ],
+  "training_frame_count": 21,
+  "training_center_errors_m": [
+    0.17162988596624415,
+    0.0676038692952869,
+    0.0995945166355173
+  ],
+  "training_center_rmse_m": 0.12103190852600612,
+  "validation": {
+    "frame_count": 22,
+    "full_coverage_frames": 22,
+    "center_rmse_m": 0.12039676042930807,
+    "point_rmse_m": 0.14138236627712533,
+    "maximum_center_error_m": 0.17883118164164344,
+    "frames": [
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.17603637639068762,
+          0.06698448506375228,
+          0.09617848924020211
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.17068927030506326,
+          0.06787702693797545,
+          0.09739855507151186
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.16933504964830481,
+          0.06851607709522815,
+          0.09617848924020211
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.17343781094541053,
+          0.0671115532984131,
+          0.09617848924020211
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.163977992695637,
+          0.06649536164281959,
+          0.10366839344035689
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.17329386889520787,
+          0.06857604637898218,
+          0.09605850426666042
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.16395922076149885,
+          0.06988494924558668,
+          0.10034608353918678
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.17883118164164344,
+          0.06648279507514997,
+          0.10107386237853912
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.16813100573420695,
+          0.06904096613685431,
+          0.09978413180832216
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.16931759060664184,
+          0.06585630634690828,
+          0.0999742369568098
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.17068927030506326,
+          0.06590231706480837,
+          0.10238648577329348
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.16929921435624765,
+          0.06871089934868747,
+          0.09500557326982598
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.1679860456168617,
+          0.06582249381104308,
+          0.09993430454910587
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.16658149760559726,
+          0.06830798839582258,
+          0.10019645778143028
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.17067010422701703,
+          0.06835821952058198,
+          0.09873879333423283
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.17200608043629104,
+          0.06643346724438177,
+          0.09773750292046213
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.16538598224581574,
+          0.06794344617345835,
+          0.09377931416593689
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.1719571810420226,
+          0.07071790549100604,
+          0.09867388354205496
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.17066374911788973,
+          0.06780591768429782,
+          0.09873879333423283
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.1666193427092626,
+          0.06652928517422137,
+          0.10154069757828701
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.17740604279032765,
+          0.06998434094236257,
+          0.10616042406733608
+        ]
+      },
+      {
+        "matched_corners": 3,
+        "center_errors_m": [
+          0.17473049254200612,
+          0.0665729369959069,
+          0.09854939680100615
+        ]
+      }
+    ]
+  },
+  "source_files": [
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003819_649118191.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003819_769620821.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003819_890184896.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003820_010684480.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003820_131228617.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003820_251735735.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003820_372279862.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003820_492768006.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003820_613313576.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003820_733823409.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003820_854386531.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003820_974878622.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003821_095423821.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003821_215930589.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003821_336476008.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003821_456977256.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003821_577522575.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003821_698420122.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003821_699035719.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003821_819193576.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003821_939609495.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003822_059965532.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003822_180308414.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003822_300656236.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003822_421010570.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003822_541358462.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003822_661702016.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003822_782049998.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003822_902394724.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003823_022736635.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003823_143140932.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003823_263493482.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003823_383839922.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003823_504187313.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003823_624532360.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003823_744876565.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003823_865228374.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003823_985582738.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003824_105927465.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003824_226279895.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003824_346629310.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003824_466975519.bin",
+    "E:\\course\\DATA\\temp\\data_collection\\group_020\\dpct高位机\\Bin\\1793003824_587324514.bin"
+  ],
+  "previous_high_origin_in_low_m": [
+    1.6086405681743896,
+    0.698170778862446,
+    -1.480195791428967
+  ],
+  "limitation": "Only 3 observed reflectors. Validation frames share one static pose. Height/pitch are soft priors; this is not an independent survey or centimetre-accuracy calibration.",
+  "previous_high_sha256": "45781811b94feff4217f31f4475c0ec5926da0827788b1d116f90825c72826ca"
+}

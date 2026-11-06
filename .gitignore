@@ -26,3 +26,6 @@ env/
 *.pcd
 *.npz
 *.pkl
+
+# Local reprojection debug reports and saved figures
+check_results_debug/

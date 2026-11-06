@@ -470,7 +470,7 @@ class _SensorPlayback:
 
 
 def main():
-    root_path = Path(r'F:\20261010\data_collection\group_011')
+    root_path = Path(r'\\121.48.164.159\Huawei\20261026_pm\data_collection\group_011')
     calib_path = root_path.parent.parent / 'calib'
     calib_flag = True
     select_flag = True

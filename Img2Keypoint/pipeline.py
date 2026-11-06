@@ -11,12 +11,18 @@ from tqdm import tqdm
 
 from mmdet.apis import init_detector, inference_detector
 from mmengine.registry import init_default_scope
+from mmengine.config import Config
 from mmpose.apis import init_model, inference_topdown
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 HELPER_DIR = SCRIPT_DIR / "2D_KeyPoints_helper"
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp"}
+POSE_VARIANTS = {
+    "base": (768, "0b8234ea_20230407"),
+    "large": (1024, "3a7ee9e1_20230314"),
+    "huge": (1280, "ffd48c05_20230314"),
+}
 
 
 def parse_args():
@@ -25,21 +31,31 @@ def parse_args():
     parser.add_argument(
         "--data_path",
         type=Path,
-        default=Path(r"F:\20260720\data_collection"),
+        default=Path(r"E:\course\DATA\temp\20261027\data_collection"),
         help="Dataset root path, or one group root that contains camera/.",
     )
     parser.add_argument("--groups", nargs="*", default=None, help="Group folders to process. If omitted, all group folders are processed.")
     parser.add_argument("--det_score_thr", type=float, default=0.5, help="Person detection score threshold.")
     parser.add_argument("--det_model", choices=("large", "tiny"), default="large", help="Detector size. tiny is faster and less accurate.")
+    parser.add_argument("--pose_model", choices=tuple(POSE_VARIANTS), default="large")
     parser.add_argument("--overwrite", action="store_true", help="Recompute existing npz files.")
     return parser.parse_args()
 
 
-def model_for_pose_init(device):
+def model_for_pose_init(device, model_size="huge"):
     init_default_scope("mmpose")
     pose_config = HELPER_DIR / "td-hm_ViTPose-huge-simple_8xb64-210e_coco-256x192.py"
-    pose_ckpt = HELPER_DIR / "td-hm_ViTPose-huge-simple_8xb64-210e_coco-256x192-ffd48c05_20230314.pth"
-    pose_model = init_model(str(pose_config), str(pose_ckpt), device=device)
+    channels, suffix = POSE_VARIANTS[model_size]
+    pose_ckpt = HELPER_DIR / f"td-hm_ViTPose-{model_size}-simple_8xb64-210e_coco-256x192-{suffix}.pth"
+    if not pose_ckpt.is_file():
+        raise FileNotFoundError(f"Missing ViTPose checkpoint: {pose_ckpt}")
+    # Official Simple Head variants share the inference pipeline and decoder.
+    config = Config.fromfile(str(pose_config))
+    config.model.backbone.arch = model_size
+    config.model.backbone.init_cfg = None
+    config.model.backbone.drop_path_rate = {"base": 0.3, "large": 0.5, "huge": 0.55}[model_size]
+    config.model.head.in_channels = channels
+    pose_model = init_model(config, str(pose_ckpt), device=device)
     pose_model.eval()
     return pose_model
 
@@ -167,7 +183,7 @@ def main():
     print("Groups: ", [group for group, _ in group_roots])
 
     det_model = model_for_seg_init(device=device, model_size=args.det_model)
-    pose_model = model_for_pose_init(device=device)
+    pose_model = model_for_pose_init(device=device, model_size=args.pose_model)
 
     for group, group_root in group_roots:
         data_path = group_root / "camera"

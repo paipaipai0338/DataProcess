@@ -345,7 +345,7 @@ def plot_registration(points_src, points_dst, R, t, result):
 def main():
     from pathlib import Path
 
-    root_path = Path(r'F:\20261009\data_collection\group_006')
+    root_path = Path(r'E:\course\DATA\temp\20261027\data_collection\group_012')
     radar_selected = 'high' # low high
 
     group_name = root_path.name  # 'group_008'
@@ -371,7 +371,7 @@ def main():
         "ref_velocity": 5,
         "guard_range": 4,
         "guard_velocity": 4,
-        "alpha": 10.0,
+        "alpha": 5.0,
         "mode": "ca",
     }
 
@@ -397,11 +397,11 @@ def main():
     print(f"雷达检测点数: {pc_radar.shape[0]}")
 
     mask = (
-        (pc_radar[:, 0] > 0.3)
+        (pc_radar[:, 0] > 1.5)
         & (pc_radar[:, 0] < 3)
         # & (pc_radar[:, 1] > -1.5)
-        & (pc_radar[:, 2] < 1)
-        & (pc_radar[:, 2] > -0.5)
+        & (pc_radar[:, 2] < 2)
+        & (pc_radar[:, 2] > -3)
     )
 
     pc_radar = pc_radar[mask]
