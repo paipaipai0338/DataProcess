@@ -102,17 +102,68 @@ python -m Calib.get_R_t_between_radar_cam --root_path "F:\20261028\data_collecti
 python -m Img2Keypoint.pipeline --data_path "F:\20261028\data_collection" --device cuda:0
 ```
 
-`--data_path` 支持整个采集集合或单个组；集合模式下可添加 `--groups group_011 group_012` 只处理指定组。默认使用 large 检测器，可用 `--det_model tiny` 切换。姿态模型默认 Huge，可用 `--pose_model base|large|huge` 选择 Simple Head 版本；所有版本统一输出到 `camera results/2D/`，后续重建使用默认二维输入目录即可。切换模型后，如需重新生成已有结果，请添加 `--overwrite`；否则仍会跳过已有文件。
+`--data_path` 支持整个采集集合或单个组；集合模式下可添加 `--groups group_011 group_012` 只处理指定组。默认使用 Large 检测器（`--det_model large`），可用 `--det_model tiny` 切换。姿态模型默认 **Large**（`--pose_model large`），可用 `--pose_model base|large|huge` 选择 Simple Head 版本；所有版本统一输出到 `camera results/2D/`，后续重建使用默认二维输入目录即可。切换模型后，如需重新生成已有结果，请添加 `--overwrite`；否则仍会跳过已有文件。
 
 输出为每组 `camera results/2D/<相机目录>/<图像名>.npz`，包含 `kpts`、`scores`、`bboxes`、`bboxes_scores`。默认跳过已有文件，添加 `--overwrite` 可重新计算。当前主流程不保存分割掩码。
 
-### ViTPose 模型权重
+### 二维检测模型配置与权重下载
 
-使用对应版本前，需在 `Img2Keypoint/2D_KeyPoints_helper/` 放置以下权重：
+官方下载来源：[MMDetection RTMDet 模型清单](https://github.com/open-mmlab/mmdetection/blob/main/configs/rtmdet/metafile.yml)、[MMPose ViTPose 模型清单](https://github.com/open-mmlab/mmpose/blob/main/configs/body_2d_keypoint/topdown_heatmap/coco/vitpose_coco.yml)。所有配置和权重均放在 `Img2Keypoint/2D_KeyPoints_helper/`，文件名需与 `pipeline.py` 一致。
 
-- Base：`td-hm_ViTPose-base-simple_8xb64-210e_coco-256x192-0b8234ea_20230407.pth`
-- Large：`td-hm_ViTPose-large-simple_8xb64-210e_coco-256x192-3a7ee9e1_20230314.pth`
-- Huge：`td-hm_ViTPose-huge-simple_8xb64-210e_coco-256x192-ffd48c05_20230314.pth`
+**配置文件：**项目已包含以下 3 个展开后的配置，正常使用无需重新下载。表中链接为官方配置来源；上游原始配置可能依赖 `_base_` 文件，不能只下载单个原始文件来替换本项目的展开配置。
+
+| 用途 | 本项目配置文件 | 官方配置地址 |
+|---|---|---|
+| RTMDet-Ins Large（默认检测器） | `rtmdet-ins_l_8xb32-300e_coco.py` | [MMDetection 配置](https://github.com/open-mmlab/mmdetection/blob/main/configs/rtmdet/rtmdet-ins_l_8xb32-300e_coco.py) |
+| RTMDet-Ins Tiny（可选检测器） | `rtmdet-ins_tiny_8xb32-300e_coco.py` | [MMDetection 配置](https://github.com/open-mmlab/mmdetection/blob/main/configs/rtmdet/rtmdet-ins_tiny_8xb32-300e_coco.py) |
+| ViTPose Simple Head（Base / Large / Huge 共用模板） | `td-hm_ViTPose-huge-simple_8xb64-210e_coco-256x192.py` | [MMPose 配置](https://github.com/open-mmlab/mmpose/blob/main/configs/body_2d_keypoint/topdown_heatmap/coco/td-hm_ViTPose-huge-simple_8xb64-210e_coco-256x192.py) |
+
+虽然 ViTPose 配置文件名含 `huge`，`pipeline.py` 会根据 `--pose_model` 调整模型结构并加载对应大小的权重；默认 Large 不需要 Huge 权重。
+
+**权重文件：**默认组合只需要 RTMDet-Ins Large 和 ViTPose Large；其他权重仅在切换对应模型时需要。ViTPose 使用 **Simple Head** 权重，文件名必须包含 `-simple`。
+
+| 模型 | 选择参数 | 官方权重下载 |
+|---|---|---|
+| RTMDet-Ins Large（默认） | `--det_model large` | [rtmdet-ins_l_8xb32-300e_coco_20221124_103237-78d1d652.pth](https://download.openmmlab.com/mmdetection/v3.0/rtmdet/rtmdet-ins_l_8xb32-300e_coco/rtmdet-ins_l_8xb32-300e_coco_20221124_103237-78d1d652.pth) |
+| RTMDet-Ins Tiny | `--det_model tiny` | [rtmdet-ins_tiny_8xb32-300e_coco_20221130_151727-ec670f7e.pth](https://download.openmmlab.com/mmdetection/v3.0/rtmdet/rtmdet-ins_tiny_8xb32-300e_coco/rtmdet-ins_tiny_8xb32-300e_coco_20221130_151727-ec670f7e.pth) |
+| ViTPose Base | `--pose_model base` | [td-hm_ViTPose-base-simple_8xb64-210e_coco-256x192-0b8234ea_20230407.pth](https://download.openmmlab.com/mmpose/v1/body_2d_keypoint/topdown_heatmap/coco/td-hm_ViTPose-base-simple_8xb64-210e_coco-256x192-0b8234ea_20230407.pth) |
+| ViTPose Large（默认） | `--pose_model large` | [td-hm_ViTPose-large-simple_8xb64-210e_coco-256x192-3a7ee9e1_20230314.pth](https://download.openmmlab.com/mmpose/v1/body_2d_keypoint/topdown_heatmap/coco/td-hm_ViTPose-large-simple_8xb64-210e_coco-256x192-3a7ee9e1_20230314.pth) |
+| ViTPose Huge | `--pose_model huge` | [td-hm_ViTPose-huge-simple_8xb64-210e_coco-256x192-ffd48c05_20230314.pth](https://download.openmmlab.com/mmpose/v1/body_2d_keypoint/topdown_heatmap/coco/td-hm_ViTPose-huge-simple_8xb64-210e_coco-256x192-ffd48c05_20230314.pth) |
+
+在**项目根目录的 PowerShell** 中执行以下命令，下载默认 Large 组合。命令会跳过已有文件，下载失败时停止；如已有文件不完整，先移走该文件再重试。
+
+```powershell
+$modelDir = Join-Path (Get-Location) "Img2Keypoint/2D_KeyPoints_helper"
+New-Item -ItemType Directory -Force -Path $modelDir | Out-Null
+$weightUrls = @(
+    "https://download.openmmlab.com/mmdetection/v3.0/rtmdet/rtmdet-ins_l_8xb32-300e_coco/rtmdet-ins_l_8xb32-300e_coco_20221124_103237-78d1d652.pth"
+    "https://download.openmmlab.com/mmpose/v1/body_2d_keypoint/topdown_heatmap/coco/td-hm_ViTPose-large-simple_8xb64-210e_coco-256x192-3a7ee9e1_20230314.pth"
+)
+foreach ($url in $weightUrls) {
+    $destination = Join-Path $modelDir ([System.IO.Path]::GetFileName($url))
+    if (-not (Test-Path -LiteralPath $destination)) {
+        curl.exe --fail --location --retry 3 --output $destination $url
+        if ($LASTEXITCODE -ne 0) { throw "模型权重下载失败：$url" }
+    }
+}
+```
+
+如需 Tiny 检测器或 Base / Huge 姿态模型，在同一 PowerShell 窗口中执行下面的可选下载命令；可从列表中删去不需要的模型地址。
+
+```powershell
+$weightUrls = @(
+    "https://download.openmmlab.com/mmdetection/v3.0/rtmdet/rtmdet-ins_tiny_8xb32-300e_coco/rtmdet-ins_tiny_8xb32-300e_coco_20221130_151727-ec670f7e.pth"
+    "https://download.openmmlab.com/mmpose/v1/body_2d_keypoint/topdown_heatmap/coco/td-hm_ViTPose-base-simple_8xb64-210e_coco-256x192-0b8234ea_20230407.pth"
+    "https://download.openmmlab.com/mmpose/v1/body_2d_keypoint/topdown_heatmap/coco/td-hm_ViTPose-huge-simple_8xb64-210e_coco-256x192-ffd48c05_20230314.pth"
+)
+foreach ($url in $weightUrls) {
+    $destination = Join-Path $modelDir ([System.IO.Path]::GetFileName($url))
+    if (-not (Test-Path -LiteralPath $destination)) {
+        curl.exe --fail --location --retry 3 --output $destination $url
+        if ($LASTEXITCODE -ne 0) { throw "模型权重下载失败：$url" }
+    }
+}
+```
 
 ## 5. 三维重建与时序后处理
 
