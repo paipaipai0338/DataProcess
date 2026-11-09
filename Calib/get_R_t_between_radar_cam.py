@@ -11,6 +11,32 @@ from Img2Keypoint.utils import get_gt_data
 from Calib.utils import *
 
 
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description='使用角反射器标定相机与雷达外参。',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument('--root_path', type=Path, default=Path('E:\\course\\DATA\\temp\\20261027\\data_collection\\group_012'), help='包含相机与雷达数据的采集组目录。')
+    parser.add_argument('--calib_path', type=Path, default=None, help='标定文件目录；未指定时使用采集组上两级目录下的 calib。')
+    parser.add_argument('--radar_selected', choices=('low', 'high'), default='high', help='需要标定的低位或高位雷达。')
+    parser.add_argument('--reference_cam', default='A', help='相机三维重建的参考相机编号。')
+    parser.add_argument('--frame_index', type=int, default=-10, help='选用的雷达帧索引，负数表示从末尾计数。')
+    parser.add_argument('--expected_points', type=int, default=4, help='需要人工标注的角反射器数量。')
+    parser.add_argument('--distance_threshold', type=float, default=0.4, help='雷达点配准的距离阈值，单位为米。')
+    parser.add_argument('--min_matched_points', type=int, default=3, help='配准所需的最少匹配角点数。')
+    parser.add_argument('--roi_x', type=float, nargs=2, default=[1.5, 3.0], help='雷达点 X 坐标筛选范围，单位为米。')
+    parser.add_argument('--roi_z', type=float, nargs=2, default=[-3.0, 2.0], help='雷达点 Z 坐标筛选范围，单位为米。')
+    parser.add_argument('--ref_range', type=int, default=5, help='距离维参考单元数。')
+    parser.add_argument('--ref_velocity', type=int, default=5, help='速度维参考单元数。')
+    parser.add_argument('--guard_range', type=int, default=4, help='距离维保护单元数。')
+    parser.add_argument('--guard_velocity', type=int, default=4, help='速度维保护单元数。')
+    parser.add_argument('--alpha', type=float, default=5.0, help='CFAR 检测门限倍率。')
+    parser.add_argument('--mode', type=str, choices=('ca', 'so', 'go'), default='ca', help='CFAR 检测模式。')
+    args = parser.parse_args(argv)
+    args.calib_path = args.calib_path or args.root_path.parent.parent / "calib"
+    return args
+
+
 def estimate_transform(points_src, points_dst):
     """
     通过SVD求解刚体旋转和平移矩阵。
@@ -343,47 +369,34 @@ def plot_registration(points_src, points_dst, R, t, result):
 
 
 def main():
-    from pathlib import Path
-
-    root_path = Path(r'E:\course\DATA\temp\20261027\data_collection\group_012')
-    radar_selected = 'high' # low high
+    args = parse_args()
+    root_path = args.root_path
+    radar_selected = args.radar_selected
 
     group_name = root_path.name  # 'group_008'
     group_num = group_name.split('_')[1]  # '008'
 
-    calib_path = root_path.parent.parent / 'calib'  # 回到 20260702 目录
+    calib_path = args.calib_path
     pkl_save_path = calib_path / f'corner_pixels_{group_num}.pkl'
     if radar_selected == 'low':
-        radar_path = root_path / 'dpct低位机\Bin'
+        radar_path = root_path / 'dpct低位机' / 'Bin'
         R_t_save_path = calib_path / 'extrinsic_img_to_radar_low.npz'
     elif radar_selected == 'high':
-        radar_path = root_path / 'dpct高位机\Bin'
+        radar_path = root_path / 'dpct高位机' / 'Bin'
         R_t_save_path = calib_path / 'extrinsic_img_to_radar_high.npz'
-    distance_threshold = 0.4  # meters; increase if radar detections are noisier
-    radar_cfar_params = {
-        # "ref_range": 9,
-        # "ref_velocity": 8,
-        # "guard_range": 8,
-        # "guard_velocity": 4,
-        # "alpha": 15.0,
-        # "mode": "ca",
-        "ref_range": 5,
-        "ref_velocity": 5,
-        "guard_range": 4,
-        "guard_velocity": 4,
-        "alpha": 5.0,
-        "mode": "ca",
-    }
-
+    distance_threshold = args.distance_threshold
+    radar_cfar_params = {key: getattr(args, key) for key in (
+        "ref_range", "ref_velocity", "guard_range", "guard_velocity", "alpha", "mode"
+    )}
 
     img_path = root_path / 'camera'
 
 
     '''人工标注像素点'''
-    get_corner_pixel_from_img(img_path, pkl_save_path, expected_points=4)
+    get_corner_pixel_from_img(img_path, pkl_save_path, expected_points=args.expected_points)
 
     '''根据像素点重建3D坐标'''
-    pixel_coordinate, error = get_corner_coordinate(pkl_save_path, calib_path=calib_path, reference_cam="A")
+    pixel_coordinate, error = get_corner_coordinate(pkl_save_path, calib_path=calib_path, reference_cam=args.reference_cam)
     print(f"重建角点坐标:\n{pixel_coordinate}")
     print(f"重建误差: {error}")
 
@@ -392,16 +405,18 @@ def main():
     if not radar_files:
         raise FileNotFoundError(f"No .bin radar files found in {radar_path}")
     print(f"雷达CFAR参数: {radar_cfar_params}")
-    targets = get_corner_data(radar_files[-10], **radar_cfar_params)
+    if not -len(radar_files) <= args.frame_index < len(radar_files):
+        raise ValueError(f"雷达帧索引 {args.frame_index} 超出范围，共 {len(radar_files)} 帧")
+    targets = get_corner_data(radar_files[args.frame_index], **radar_cfar_params)
     pc_radar = targets["cartesian coordinate"]
     print(f"雷达检测点数: {pc_radar.shape[0]}")
 
     mask = (
-        (pc_radar[:, 0] > 1.5)
-        & (pc_radar[:, 0] < 3)
+        (pc_radar[:, 0] > args.roi_x[0])
+        & (pc_radar[:, 0] < args.roi_x[1])
         # & (pc_radar[:, 1] > -1.5)
-        & (pc_radar[:, 2] < 2)
-        & (pc_radar[:, 2] > -3)
+        & (pc_radar[:, 2] < args.roi_z[1])
+        & (pc_radar[:, 2] > args.roi_z[0])
     )
 
     pc_radar = pc_radar[mask]
@@ -421,7 +436,7 @@ def main():
         pixel_coordinate,
         pc_radar,
         distance_threshold=distance_threshold,
-        min_matched_points=3,
+        min_matched_points=args.min_matched_points,
     )
     print(f"\n匹配结果: {registration['radar_indices_by_source']}")
     print(f"种子角点索引: {registration['seed_source_indices']}")

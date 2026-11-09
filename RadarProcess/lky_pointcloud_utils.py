@@ -45,7 +45,26 @@ from typing import Dict, Optional, Tuple, Union, Literal, Any
 import numpy as np
 
 # Put lky.py in the same directory as this file, or make sure it is importable.
-import lky
+if __package__:
+    from . import lky
+else:
+    import lky
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description='从单帧 USB FFT bin 文件生成点云数组，支持杂波抑制。',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument('bin_path', nargs='?', default='usb_fft.bin', help='输入的单帧 USB FFT bin 文件路径。')
+    parser.add_argument('--branch', choices=['dbf_first', 'original', 'both'], default='dbf_first', help='点云生成分支：先空间 DBF、先 CFAR 或同时输出两者。')
+    parser.add_argument('--output-format', choices=['xyz', 'full'], default='xyz', help='点云数组格式：仅 XYZ 或包含距离、角度等完整属性。')
+    parser.add_argument('--mti', choices=['none', 'mean', 'two_pulse', 'three_pulse', 'iir'], default='none', help='静态杂波抑制方式：关闭、均值对消、二脉冲、三脉冲或 IIR。')
+    parser.add_argument('--cfar-mul', type=float, default=10.0, help='原始处理分支的 CFAR 检测门限倍率。')
+    parser.add_argument('--expert-cfar-mul', type=float, default=None, help='DBF 优先分支的 CFAR 门限倍率；未指定时使用 cfar-mul。')
+    parser.add_argument('--out', default='', help='点云输出路径；空字符串表示不保存，两分支结果使用 NPZ。')
+    return parser.parse_args(argv)
+
 
 
 MtiMode = Literal["none", "mean", "two_pulse", "three_pulse", "iir"]
@@ -481,20 +500,8 @@ def save_point_cloud_array(path: str, pc: Union[np.ndarray, Dict[str, np.ndarray
         np.save(path, pc)
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate radar point-cloud ndarray from one lky-style USB FFT bin")
-    parser.add_argument("bin_path")
-    parser.add_argument("--branch", default="dbf_first", choices=["dbf_first", "original", "both"])
-    parser.add_argument("--output-format", default="xyz", choices=["xyz", "full"])
-    parser.add_argument("--mti", default="none", choices=["none", "mean", "two_pulse", "three_pulse", "iir"])
-    parser.add_argument("--cfar-mul", type=float, default=10.0)
-    parser.add_argument("--expert-cfar-mul", type=float, default=None)
-    parser.add_argument("--out", default="", help="Optional .npy or .npz save path")
-    return parser.parse_args()
-
-
 def main() -> int:
-    args = _parse_args()
+    args = parse_args()
     pc = generate_point_cloud_array_from_bin(
         args.bin_path,
         branch=args.branch,

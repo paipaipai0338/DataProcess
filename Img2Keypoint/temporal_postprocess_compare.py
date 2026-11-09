@@ -8,6 +8,38 @@ from scipy.optimize import linear_sum_assignment
 from scipy import signal
 
 
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description='对三维人体骨架进行时序后处理并比较处理前后结果。',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument('--root_path', type=Path, default=Path('F:\\20261008\\data_collection\\group_013'), help='本次采集或标定的数据根目录。其余路径默认由该目录自动派生。')
+    parser.add_argument('--input_path', type=Path, default=None, help='原始 3D 关键点结果输入目录，默认使用 root_path/camera results/3D。')
+    parser.add_argument('--output_path', type=Path, default=None, help='时序平滑后 3D 关键点结果的输出目录，默认使用 root_path/camera results/smoothed 3D。')
+    parser.add_argument('--smooth_alpha', type=float, default=0.35, help='指数平滑系数，用于控制新观测与历史轨迹的融合比例。')
+    parser.add_argument('--max_match_distance', type=float, default=0.5, help='跨帧轨迹匹配允许的最大中心点距离。')
+    parser.add_argument('--max_missing', type=int, default=8, help='轨迹在被删除前允许连续缺失的最大帧数。')
+    parser.add_argument('--min_valid_joints', type=int, default=5, help='判定单个人体姿态有效所需的最少有效关节点数量。')
+    parser.add_argument('--max_tracks', type=int, default=0, help='最多保留的轨迹数量，0 表示不限制。')
+    parser.add_argument('--max_interp_gap', type=int, default=8, help='允许进行缺失插值的最大连续帧间隔。')
+    parser.add_argument('--medfilt_kernel', type=int, default=7, help='中值滤波窗口大小，用于抑制关键点时序抖动。')
+    parser.add_argument('--velocity_threshold', type=float, default=0.35, help='速度异常检测阈值，用于识别并修正突变点。')
+    parser.add_argument('--bone_length_weight', type=float, default=0.65, help='骨长约束修正的权重，用于保持人体骨架长度稳定。')
+    parser.add_argument('--bone_iters', type=int, default=2, help='骨长约束修正的迭代次数。')
+    parser.add_argument('--show', action=argparse.BooleanOptionalAction, default=True, help='是否显示平滑前后对比可视化窗口。')
+    parser.add_argument('--save_plot', action='store_true', default=False, help='是否保存平滑前后对比图。')
+    parser.add_argument('--pause', type=float, default=0.01, help='可视化播放时每帧暂停时间，单位为秒。')
+    parser.add_argument('--process_all_groups', type=lambda v: str(v).lower() in ('1', 'true', 'yes', 'y'), default=False, help='是否处理输入目录下推断出的所有分组。')
+    parser.add_argument('--skip_existing', type=lambda v: str(v).lower() in ('1', 'true', 'yes', 'y'), default=False, help='输出文件已存在时是否跳过对应帧。')
+    args = parser.parse_args(argv)
+    if args.root_path is None and any(p is None for p in (args.input_path, args.output_path)):
+        parser.error("请指定 --root_path，或同时指定 --input_path 和 --output_path。")
+    args.input_path = args.input_path or args.root_path / "camera results" / "3D"
+    args.output_path = args.output_path or args.root_path / "camera results" / "smoothed 3D"
+    return args
+
+
+
 
 COCO17_SKELETON = [
     (0, 1), (0, 2), (1, 3), (2, 4), (5, 6), (5, 7), (7, 9),
@@ -36,32 +68,6 @@ DIRECTED_BONES = [
 ]
 
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--root_path", type=Path, default=Path(r"F:\20261008\data_collection\group_013"), help="本次采集或标定的数据根目录。其余路径默认由该目录自动派生。")
-    parser.add_argument("--input_path", type=Path, default=None, help="原始 3D 关键点结果输入目录，默认使用 root_path/results/3D/group。")
-    parser.add_argument("--output_path", type=Path, default=None, help="时序平滑后 3D 关键点结果的输出目录，默认使用 root_path/results/smoothed 3D/group。")
-    parser.add_argument("--smooth_alpha", type=float, default=0.35, help="指数平滑系数，用于控制新观测与历史轨迹的融合比例。")
-    parser.add_argument("--max_match_distance", type=float, default=0.50, help="跨帧轨迹匹配允许的最大中心点距离。")
-    parser.add_argument("--max_missing", type=int, default=8, help="轨迹在被删除前允许连续缺失的最大帧数。")
-    parser.add_argument("--min_valid_joints", type=int, default=5, help="判定单个人体姿态有效所需的最少有效关节点数量。")
-    parser.add_argument("--max_tracks", type=int, default=0, help="最多保留的轨迹数量，0 表示不限制。")
-    parser.add_argument("--max_interp_gap", type=int, default=8, help="允许进行缺失插值的最大连续帧间隔。")
-    parser.add_argument("--medfilt_kernel", type=int, default=7, help="中值滤波窗口大小，用于抑制关键点时序抖动。")
-    parser.add_argument("--velocity_threshold", type=float, default=0.35, help="速度异常检测阈值，用于识别并修正突变点。")
-    parser.add_argument("--bone_length_weight", type=float, default=0.65, help="骨长约束修正的权重，用于保持人体骨架长度稳定。")
-    parser.add_argument("--bone_iters", type=int, default=2, help="骨长约束修正的迭代次数。")
-    parser.add_argument("--show", action="store_true", default=True, help="是否显示平滑前后对比可视化窗口。")
-    parser.add_argument("--save_plot", action="store_true", help="是否保存平滑前后对比图。")
-    parser.add_argument("--pause", type=float, default=0.01, help="可视化播放时每帧暂停时间，单位为秒。")
-    parser.add_argument("--process_all_groups", type=lambda v: str(v).lower() in ("1", "true", "yes", "y"), default=False, help="是否处理输入目录下推断出的所有分组。")
-    parser.add_argument("--skip_existing", type=lambda v: str(v).lower() in ("1", "true", "yes", "y"), default=False, help="输出文件已存在时是否跳过对应帧。")
-    args = parser.parse_args()
-    if args.root_path is None and any(p is None for p in (args.input_path, args.output_path)):
-        parser.error("请指定 --root_path，或同时指定 --input_path 和 --output_path。")
-    args.input_path = args.input_path or args.root_path / "camera results" / "3D"
-    args.output_path = args.output_path or args.root_path / "camera results" / "smoothed 3D"
-    return args
 
 
 @dataclass

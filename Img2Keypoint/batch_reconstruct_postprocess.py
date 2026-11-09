@@ -12,115 +12,55 @@ import matplotlib
 import numpy as np
 from tqdm import tqdm
 
-def parse_args():
+
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description=(
-            "Batch 3D reconstruction and temporal postprocess for one group "
-            "or a collection of groups. No visualization is performed."
-        )
+        description='批量执行三维人体重建与时序后处理，不打开可视化窗口。',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument(
-        "--root_path",
-        "--data_path",
-        dest="root_path",
-        type=Path,
-        default=Path(r'F:\20261028\data_collection'),
-        help="One group root containing camera/, or a collection root containing group folders.",
-    )
-    parser.add_argument(
-        "--groups",
-        nargs="*",
-        default=None,
-        help="Group folder names to process. If omitted, all groups are processed.",
-    )
-    parser.add_argument(
-        "--calib_path",
-        type=Path,
-        default=None,
-        help="Calibration directory. If omitted, it is inferred from root/group parents.",
-    )
-    parser.add_argument(
-        "--stage",
-        choices=("all", "reconstruct", "postprocess"),
-        default="all",
-        help="Processing stage to run.",
-    )
+    parser.add_argument('--root_path', '--data_path', dest='root_path', type=Path, default=Path('F:\\20261028\\data_collection'), help='采集数据根目录，可指定单个采集组或包含多个组的父目录。')
+    parser.add_argument('--groups', nargs='*', default=None, help='需要处理的采集组名称；未指定时处理全部组。')
+    parser.add_argument('--calib_path', type=Path, default=None, help='标定文件目录；未指定时按数据目录推导。')
+    parser.add_argument('--stage', choices=('all', 'reconstruct', 'postprocess'), default='all', help='处理阶段：重建与后处理、仅重建或仅后处理。')
 
-    parser.add_argument(
-        "--result_2D_data_path",
-        "--result_2d_data_path",
-        dest="result_2d_data_path",
-        type=Path,
-        default=None,
-        help="2D result path. For multiple groups, this is treated as a base path with group subfolders.",
-    )
-    parser.add_argument(
-        "--result_3D_data_path",
-        "--result_3d_data_path",
-        "--input_path",
-        dest="result_3d_data_path",
-        type=Path,
-        default=None,
-        help="Raw 3D output/input path. For multiple groups, this is treated as a base path with group subfolders.",
-    )
-    parser.add_argument(
-        "--smooth_3D_data_path",
-        "--smooth_3d_data_path",
-        "--output_path",
-        dest="smooth_3d_data_path",
-        type=Path,
-        default=None,
-        help="Smoothed 3D output path. For multiple groups, this is treated as a base path with group subfolders.",
-    )
-    parser.add_argument("--result_2d_subdir", default="camera results/2D")
-    parser.add_argument("--result_3d_subdir", default="camera results/3D")
-    parser.add_argument("--smooth_3d_subdir", default="camera results/smoothed 3D")
+    parser.add_argument('--result_2D_data_path', '--result_2d_data_path', dest='result_2d_data_path', type=Path, default=None, help='二维关键点目录；默认使用组内 camera results/2D，多组显式指定时按组名查找子目录。')
+    parser.add_argument('--result_3D_data_path', '--result_3d_data_path', '--input_path', dest='result_3d_data_path', type=Path, default=None, help='原始三维骨架目录；默认使用组内 camera results/3D，多组显式指定时按组名查找子目录。')
+    parser.add_argument('--smooth_3D_data_path', '--smooth_3d_data_path', '--output_path', dest='smooth_3d_data_path', type=Path, default=None, help='平滑后三维骨架目录；默认使用组内 camera results/smoothed 3D，多组显式指定时按组名查找子目录。')
+    parser.add_argument('--result_2d_subdir', default='camera results/2D', help='各采集组内二维结果的相对子目录。')
+    parser.add_argument('--result_3d_subdir', default='camera results/3D', help='各采集组内原始三维结果的相对子目录。')
+    parser.add_argument('--smooth_3d_subdir', default='camera results/smoothed 3D', help='各采集组内平滑后三维结果的相对子目录。')
 
-    parser.add_argument("--reference_cam", type=str, default="A")
-    parser.add_argument(
-        "--matching_mode",
-        type=str,
-        default="ref_guided",
-        choices=("exhaustive", "ref_guided"),
-    )
-    parser.add_argument("--pairwise_top_k", type=int, default=1)
-    parser.add_argument("--min_support_cams", type=int, default=3)
-    parser.add_argument("--max_missing_cams", type=int, default=4)
-    parser.add_argument("--pairwise_none_error_m", type=float, default=0.10)
-    parser.add_argument("--pairwise_candidate_error_m", type=float, default=0.20)
-    parser.add_argument("--max_candidate_ray_error_m", type=float, default=0.10)
-    parser.add_argument("--strict_two_cam_ray_error_m", type=float, default=0.05)
-    parser.add_argument("--min_candidate_valid_joints", type=int, default=5)
-    parser.add_argument("--support_aware_sort", type=str2bool, default=True)
-    parser.add_argument("--use_2d_scores", type=str2bool, default=True)
-    parser.add_argument("--verbose_every", type=int, default=100)
-    parser.add_argument("--num_workers", type=int, default=8)
-    parser.add_argument("--parallel_chunksize", type=int, default=8)
+    parser.add_argument('--reference_cam', type=str, default='A', help='三维坐标使用的参考相机编号。')
+    parser.add_argument('--matching_mode', type=str, choices=('exhaustive', 'ref_guided'), default='ref_guided', help='跨相机人物匹配方式：穷举或参考视角引导。')
+    parser.add_argument('--pairwise_top_k', type=int, default=1, help='每对相机保留的人物匹配候选数。')
+    parser.add_argument('--min_support_cams', type=int, default=3, help='人物候选至少需要的支持相机数。')
+    parser.add_argument('--max_missing_cams', type=int, default=4, help='构建人物候选时允许缺失的最多相机数。')
+    parser.add_argument('--pairwise_none_error_m', type=float, default=0.1, help='允许添加空匹配候选的射线误差阈值，单位为米。')
+    parser.add_argument('--pairwise_candidate_error_m', type=float, default=0.2, help='相机对匹配候选的射线误差阈值，单位为米。')
+    parser.add_argument('--max_candidate_ray_error_m', type=float, default=0.1, help='最终人物候选的最大平均射线误差，单位为米。')
+    parser.add_argument('--strict_two_cam_ray_error_m', type=float, default=0.05, help='仅两台相机支持时的严格射线误差阈值，单位为米。')
+    parser.add_argument('--min_candidate_valid_joints', type=int, default=5, help='人物候选至少需要的有效三维关节点数。')
+    parser.add_argument('--support_aware_sort', type=str2bool, default=True, help='是否优先按支持相机数、再按射线误差排序。')
+    parser.add_argument('--use_2d_scores', type=str2bool, default=True, help='是否在人物匹配和三维重建中使用二维关节点置信度。')
+    parser.add_argument('--verbose_every', type=int, default=100, help='每处理多少帧打印一次进度。')
+    parser.add_argument('--num_workers', type=int, default=8, help='三维重建使用的并行进程数。')
+    parser.add_argument('--parallel_chunksize', type=int, default=8, help='进程池每次分发的帧数。')
 
-    parser.add_argument("--smooth_alpha", type=float, default=0.35)
-    parser.add_argument("--max_match_distance", type=float, default=0.50)
-    parser.add_argument("--max_missing", type=int, default=8)
-    parser.add_argument("--min_valid_joints", type=int, default=5)
-    parser.add_argument("--max_tracks", type=int, default=0)
-    parser.add_argument("--max_interp_gap", type=int, default=8)
-    parser.add_argument("--medfilt_kernel", type=int, default=7)
-    parser.add_argument("--velocity_threshold", type=float, default=0.35)
-    parser.add_argument("--bone_length_weight", type=float, default=0.65)
-    parser.add_argument("--bone_iters", type=int, default=2)
+    parser.add_argument('--smooth_alpha', type=float, default=0.35, help='指数平滑系数，控制新观测与历史轨迹的融合比例。')
+    parser.add_argument('--max_match_distance', type=float, default=0.5, help='跨帧人物轨迹匹配的最大距离，单位为米。')
+    parser.add_argument('--max_missing', type=int, default=8, help='删除轨迹前允许连续缺失的最大帧数。')
+    parser.add_argument('--min_valid_joints', type=int, default=5, help='参与处理所需的最少有效关节点数。')
+    parser.add_argument('--max_tracks', type=int, default=0, help='最多保留的轨迹数，0 表示不限制。')
+    parser.add_argument('--max_interp_gap', type=int, default=8, help='允许插值补全的最大连续缺失帧数。')
+    parser.add_argument('--medfilt_kernel', type=int, default=7, help='中值滤波窗口大小。')
+    parser.add_argument('--velocity_threshold', type=float, default=0.35, help='三维关节点相邻帧跳变抑制阈值，单位为米。')
+    parser.add_argument('--bone_length_weight', type=float, default=0.65, help='骨长约束修正权重。')
+    parser.add_argument('--bone_iters', type=int, default=2, help='每帧骨长约束修正的迭代次数。')
 
-    parser.add_argument(
-        "--skip_existing",
-        type=str2bool,
-        default=True,
-        help="Skip existing raw/smoothed 3D frame files.",
-    )
-    parser.add_argument(
-        "--continue_on_error",
-        type=str2bool,
-        default=False,
-        help="Continue with later groups when one group fails.",
-    )
-    return parser.parse_args()
+    parser.add_argument('--skip_existing', type=str2bool, default=True, help='是否跳过已有结果文件。')
+    parser.add_argument('--continue_on_error', type=str2bool, default=False, help='某个采集组处理失败后是否继续处理其他组。')
+    return parser.parse_args(argv)
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
@@ -173,7 +113,7 @@ def str2bool(value):
         return True
     if lowered in ("no", "false", "f", "0", "n"):
         return False
-    raise argparse.ArgumentTypeError("Boolean value expected.")
+    raise argparse.ArgumentTypeError("请输入有效布尔值，例如 true 或 false。")
 
 
 @dataclass(frozen=True)
@@ -185,9 +125,6 @@ class GroupJob:
     result_3d_path: Path
     smooth_3d_path: Path
     calib_path: Path
-
-
-
 
 
 def group_sort_key(item: Tuple[str, Path]):

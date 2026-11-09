@@ -1,4 +1,5 @@
 
+import argparse
 import os
 from pathlib import Path
 
@@ -8,15 +9,36 @@ import numpy as np
 from RadarProcess.utils import bin_to_cube_range_fft, doppler_fft, Radar_Config, get_radar_res
 
 
-if __name__ == '__main__':
-    # root_path = Path(r'C:\Users\Administrator\Desktop\frames')
-    # radar_bin_path = root_path
-    root_path = Path(r'\\121.48.164.159\Huawei\20260615\data_collection\group_016')
-    radar_path = root_path / 'dpct高位机'
-    radar_bin_path = radar_path / 'Bin'
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description='逐帧检查雷达相位异常及距离速度图。',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument('--root_path', type=Path, default=Path('\\\\121.48.164.159\\Huawei\\20260615\\data_collection\\group_016'), help='雷达数据所在的采集组目录。')
+    parser.add_argument('--radar_selected', choices=('low', 'high'), default='high', help='需要检查的低位或高位雷达。')
+    parser.add_argument('--radar_bin_path', type=Path, default=None, help='雷达 bin 目录；未指定时由采集组和雷达位置推导。')
+    parser.add_argument('--max_frames', type=int, default=None, help='最多检查的帧数；未指定时检查全部帧。')
+    parser.add_argument('--power_percentile', type=float, default=60.0, help='筛选有效距离单元的功率百分位，范围为 0 到 100。')
+    parser.add_argument('--db_min', type=float, default=-40.0, help='RD 图显示的最小相对功率，单位为 dB。')
+    parser.add_argument('--pause', type=float, default=0.001, help='每帧显示暂停时间，单位为秒。')
+    args = parser.parse_args(argv)
+    if not 0 <= args.power_percentile <= 100:
+        parser.error("--power_percentile 必须在 0 到 100 之间。")
+    if args.pause <= 0 or (args.max_frames is not None and args.max_frames < 1):
+        parser.error("暂停时间和帧数上限必须为正数。")
+    return args
 
-    bin_files = os.listdir(radar_bin_path)
+
+def main():
+    args = parse_args()
+    root_path = args.root_path
+    radar_path = root_path / ("dpct高位机" if args.radar_selected == "high" else "dpct低位机")
+    radar_bin_path = args.radar_bin_path or radar_path / "Bin"
+
+    bin_files = [p.name for p in radar_bin_path.iterdir() if p.suffix.lower() == ".bin"]
     bin_files.sort()
+    if args.max_frames is not None:
+        bin_files = bin_files[:args.max_frames]
 
     if len(bin_files) == 0:
         raise RuntimeError(f'目录中不存在 bin 文件：{radar_bin_path}')
@@ -77,7 +99,7 @@ if __name__ == '__main__':
             print(f'{file} range power 全部无效，跳过')
             continue
 
-        power_threshold = np.percentile(range_power[finite_range], 60)
+        power_threshold = np.percentile(range_power[finite_range], args.power_percentile)
         valid_range = finite_range & (range_power > power_threshold)
 
         if not np.any(valid_range):
@@ -216,7 +238,7 @@ if __name__ == '__main__':
                 float(v_axis_full[-1]),
             ],
             cmap='viridis',
-            vmin=-40,
+            vmin=args.db_min,
             vmax=0,
         )
 
@@ -238,7 +260,7 @@ if __name__ == '__main__':
                 float(v_axis_full[-1]),
             ],
             cmap='viridis',
-            vmin=-40,
+            vmin=args.db_min,
             vmax=0,
         )
 
@@ -256,7 +278,11 @@ if __name__ == '__main__':
         fig.tight_layout()
         fig.canvas.draw()
         fig.canvas.flush_events()
-        plt.pause(0.001)
+        plt.pause(args.pause)
 
     plt.ioff()
     plt.show()
+
+
+if __name__ == "__main__":
+    main()

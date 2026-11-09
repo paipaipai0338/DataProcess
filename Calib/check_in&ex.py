@@ -13,40 +13,25 @@ if str(PROJECT_ROOT) not in sys.path:
 from Calib.chessboard_detection_helper import detect_chessboard_fullres, check_corners_order_minimal
 from Img2Keypoint.utils import load_extrinsic_data, load_intrinsic_data
 
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description='检查指定数据目录的相机外参误差。',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument('--mode', type=str, choices=['check_camera_intrinsic', 'check_camera_extrinsic'], default='check_camera_extrinsic', help='检查模式；当前脚本只执行 check_camera_extrinsic。')
+    parser.add_argument('--data_path', type=Path, default=Path('F:\\20261008\\data_collection\\group_005'), help='用于外参检查的一组数据目录；可为 group_xxx、group_xxx/camera，或包含多个 group_xxx 的父目录。')
+    parser.add_argument('--calib_path', type=Path, default=Path('F:\\20261008\\calib'), help='标定文件目录，包含 intrinsic_cam_*.npz 和 extrinsic_T_cam_*_to_cam_*.npy。')
+    parser.add_argument('--reference_cam', type=str, default='A', help='外参参考相机编号。')
+    parser.add_argument('--selected_groups', type=str, default=None, help='当 data_path 是父目录时，可指定要检查的 group，支持 5、group_005 或逗号分隔列表。')
+    args = parser.parse_args(argv)
+
+    return args
+
+
 ROWS, COLS = 24, 24  # inner corners: rows, cols
 SQUARE = 0.04        # meters
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="检查指定数据目录的相机外参误差。")
-    parser.add_argument(
-        "--mode",
-        type=str,
-        default="check_camera_extrinsic",
-        choices=["check_camera_intrinsic", "check_camera_extrinsic"],
-        help="检查模式；当前脚本只执行 check_camera_extrinsic。",
-    )
-    parser.add_argument(
-        "--data_path",
-        type=Path,
-        default=Path(r"F:\20261008\data_collection\group_005"),
-        help="用于外参检查的一组数据目录；可为 group_xxx、group_xxx/camera，或包含多个 group_xxx 的父目录。",
-    )
-    parser.add_argument(
-        "--calib_path",
-        type=Path,
-        default=Path(r"F:\20261008\calib"),
-        help="标定文件目录，包含 intrinsic_cam_*.npz 和 extrinsic_T_cam_*_to_cam_*.npy。",
-    )
-    parser.add_argument("--reference_cam", type=str, default="A", help="外参参考相机编号。")
-    parser.add_argument(
-        "--selected_groups",
-        type=str,
-        default=None,
-        help="当 data_path 是父目录时，可指定要检查的 group，支持 5、group_005 或逗号分隔列表。",
-    )
-    args = parser.parse_args()
-
-    return args
 
 def natural_group_sort_key(group_name):
     match = re.search(r"(\d+)$", str(group_name))

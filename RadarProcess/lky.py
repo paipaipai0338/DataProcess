@@ -106,6 +106,19 @@ from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 
 
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description='从单帧 USB FFT bin 文件生成雷达点云。',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument('bin_file', nargs='?', default='usb_fft.bin', help='输入的单帧 USB FFT bin 文件路径。')
+    parser.add_argument('--branch', choices=['dbf_first', 'original', 'both'], default='dbf_first', help='点云生成分支：先空间 DBF、先 CFAR 或同时输出两者。')
+    parser.add_argument('--csv', default='', help='点云 CSV 输出路径；空字符串表示不保存，仅单分支支持。')
+    parser.add_argument('--npz', default='', help='点云 NPZ 输出路径；空字符串表示不保存。')
+    return parser.parse_args(argv)
+
+
+
 # ============================================================================
 # Steering-vector helpers from steeringVec_calu.py
 # ============================================================================
@@ -1332,22 +1345,8 @@ def save_point_table_csv(point_table: Dict[str, np.ndarray], csv_path: str) -> N
             writer.writerow(row)
 
 
-def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate radar point cloud from one USB FFT bin file")
-    parser.add_argument("bin_file", help="Path to one usb_fft_*.bin frame")
-    parser.add_argument(
-        "--branch",
-        default="dbf_first",
-        choices=["dbf_first", "original", "both"],
-        help="Point-cloud generation branch",
-    )
-    parser.add_argument("--csv", default="", help="Optional CSV output path for one branch")
-    parser.add_argument("--npz", default="", help="Optional NPZ output path")
-    return parser.parse_args(argv)
-
-
 def main(argv: Optional[List[str]] = None) -> int:
-    args = _parse_args(argv)
+    args = parse_args(argv)
     result = generate_point_cloud_from_bin(args.bin_file, branch=args.branch)
 
     if args.branch == "both":

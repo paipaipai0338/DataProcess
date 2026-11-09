@@ -15,6 +15,21 @@ from mmengine.config import Config
 from mmpose.apis import init_model, inference_topdown
 
 
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description='检测多相机图像中的人体及二维关节点。',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument('--device', type=str, default='cuda:0', help='推理设备，例如 cuda:0 或 cpu。')
+    parser.add_argument('--data_path', type=Path, default=Path('E:\\course\\DATA\\temp\\20261027\\data_collection'), help='采集数据目录，可指定单个采集组或包含多个组的父目录。')
+    parser.add_argument('--groups', nargs='*', default=None, help='需要处理的采集组名称；未指定时处理全部组。')
+    parser.add_argument('--det_score_thr', type=float, default=0.5, help='人体检测置信度阈值。')
+    parser.add_argument('--det_model', choices=('large', 'tiny'), default='large', help='人体检测模型大小，tiny 速度更快。')
+    parser.add_argument('--pose_model', choices=('base', 'large', 'huge'), default='large', help='ViTPose 姿态模型大小。')
+    parser.add_argument('--overwrite', action='store_true', default=False, help='是否重新计算并覆盖已有二维结果。')
+    return parser.parse_args(argv)
+
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 HELPER_DIR = SCRIPT_DIR / "2D_KeyPoints_helper"
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp"}
@@ -23,23 +38,6 @@ POSE_VARIANTS = {
     "large": (1024, "3a7ee9e1_20230314"),
     "huge": (1280, "ffd48c05_20230314"),
 }
-
-
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--device", type=str, default="cuda:0", help="Inference device, e.g. cuda:0 or cpu.")
-    parser.add_argument(
-        "--data_path",
-        type=Path,
-        default=Path(r"E:\course\DATA\temp\20261027\data_collection"),
-        help="Dataset root path, or one group root that contains camera/.",
-    )
-    parser.add_argument("--groups", nargs="*", default=None, help="Group folders to process. If omitted, all group folders are processed.")
-    parser.add_argument("--det_score_thr", type=float, default=0.5, help="Person detection score threshold.")
-    parser.add_argument("--det_model", choices=("large", "tiny"), default="large", help="Detector size. tiny is faster and less accurate.")
-    parser.add_argument("--pose_model", choices=tuple(POSE_VARIANTS), default="large")
-    parser.add_argument("--overwrite", action="store_true", help="Recompute existing npz files.")
-    return parser.parse_args()
 
 
 def model_for_pose_init(device, model_size="huge"):

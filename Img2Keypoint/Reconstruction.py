@@ -17,41 +17,36 @@ import argparse
 from Calib.chessboard_detection_helper import detect_chessboard_fullres, check_corners_order_minimal
 from Img2Keypoint.utils import load_extrinsic_data, load_intrinsic_data, COCO17_SKELETON, get_matched_pairs
 
-def str2bool(v):
-    if isinstance(v, bool):
-        return v
-    if str(v).lower() in ("yes", "true", "t", "1", "y"):
-        return True
-    if str(v).lower() in ("no", "false", "f", "0", "n"):
-        return False
-    raise argparse.ArgumentTypeError("Boolean value expected.")
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--root_path', type=Path, default=Path(r"F:\20261008\data_collection\group_013"), help="dataset root")
-    parser.add_argument('--calib_path', type=Path, default=Path(r'F:\20261008\calib'), help="calibration directory, default: root_path/calib")
-    parser.add_argument('--reference_cam', type=str, default="A", help="reference camera id")
-    parser.add_argument('--result_2D_data_path', type=Path, default=None, help="2D result directory, default: root_path/camera results/2D")
-    parser.add_argument('--result_3D_data_path', type=Path, default=None, help="3D output directory, default: root_path/camera results/3D")
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description='从多相机二维关节点重建三维人体骨架。',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument('--root_path', type=Path, default=Path('F:\\20261008\\data_collection\\group_013'), help='采集数据根目录，可指定单个采集组或包含多个组的父目录。')
+    parser.add_argument('--calib_path', type=Path, default=Path('F:\\20261008\\calib'), help='标定文件目录，默认读取指定的 calib 目录。')
+    parser.add_argument('--reference_cam', type=str, default='A', help='三维坐标使用的参考相机编号。')
+    parser.add_argument('--result_2D_data_path', type=Path, default=None, help='二维关键点目录；未指定时使用采集组下的 camera results/2D。')
+    parser.add_argument('--result_3D_data_path', type=Path, default=None, help='原始三维骨架目录；未指定时使用采集组下的 camera results/3D。')
 
-    parser.add_argument('--matching_mode', type=str, default="ref_guided", choices=["exhaustive", "ref_guided"], help="multi-camera matching mode")
-    parser.add_argument('--pairwise_top_k', type=int, default=1, help="pairwise candidates kept for each camera pair")
-    parser.add_argument('--min_support_cams', type=int, default=3, help="minimum supporting cameras for a person candidate")
-    parser.add_argument('--max_missing_cams', type=int, default=4, help="maximum missing cameras allowed while building candidates")
-    parser.add_argument('--pairwise_none_error_m', type=float, default=0.10, help="ray error threshold for adding empty pairwise candidates")
-    parser.add_argument('--pairwise_candidate_error_m', type=float, default=0.20, help="ray error threshold for pairwise candidates")
-    parser.add_argument('--max_candidate_ray_error_m', type=float, default=0.10, help="maximum average ray error for final candidates")
-    parser.add_argument('--strict_two_cam_ray_error_m', type=float, default=0.05, help="strict ray error threshold for two-camera candidates")
-    parser.add_argument('--min_candidate_valid_joints', type=int, default=5, help="minimum valid reconstructed joints for final candidates")
-    parser.add_argument('--support_aware_sort', type=str2bool, default=True, help="sort candidates by camera support before ray error")
-    parser.add_argument('--use_2d_scores', type=str2bool, default=True, help="use 2D keypoint scores during matching and reconstruction")
-    parser.add_argument('--verbose_every', type=int, default=100, help="progress print interval")
+    parser.add_argument('--matching_mode', type=str, choices=['exhaustive', 'ref_guided'], default='ref_guided', help='跨相机人物匹配方式：穷举或参考视角引导。')
+    parser.add_argument('--pairwise_top_k', type=int, default=1, help='每对相机保留的人物匹配候选数。')
+    parser.add_argument('--min_support_cams', type=int, default=3, help='人物候选至少需要的支持相机数。')
+    parser.add_argument('--max_missing_cams', type=int, default=4, help='构建人物候选时允许缺失的最多相机数。')
+    parser.add_argument('--pairwise_none_error_m', type=float, default=0.1, help='允许添加空匹配候选的射线误差阈值，单位为米。')
+    parser.add_argument('--pairwise_candidate_error_m', type=float, default=0.2, help='相机对匹配候选的射线误差阈值，单位为米。')
+    parser.add_argument('--max_candidate_ray_error_m', type=float, default=0.1, help='最终人物候选的最大平均射线误差，单位为米。')
+    parser.add_argument('--strict_two_cam_ray_error_m', type=float, default=0.05, help='仅两台相机支持时的严格射线误差阈值，单位为米。')
+    parser.add_argument('--min_candidate_valid_joints', type=int, default=5, help='人物候选至少需要的有效三维关节点数。')
+    parser.add_argument('--support_aware_sort', type=str2bool, default=True, help='是否优先按支持相机数、再按射线误差排序。')
+    parser.add_argument('--use_2d_scores', type=str2bool, default=True, help='是否在人物匹配和三维重建中使用二维关节点置信度。')
+    parser.add_argument('--verbose_every', type=int, default=100, help='每处理多少帧打印一次进度。')
 
-    parser.add_argument('--num_workers', type=int, default=8, help="number of worker processes")
-    parser.add_argument('--parallel_chunksize', type=int, default=1, help="chunksize for process-pool map")
-    parser.add_argument('--show_final_vis', type=str2bool, default=True, help="show final 3D visualization after saving")
-    parser.add_argument('--skip_existing', type=str2bool, default=False, help="skip frames whose 3D pkl already exists")
-    args = parser.parse_args()
+    parser.add_argument('--num_workers', type=int, default=8, help='三维重建使用的并行进程数。')
+    parser.add_argument('--parallel_chunksize', type=int, default=1, help='进程池每次分发的帧数。')
+    parser.add_argument('--show_final_vis', type=str2bool, default=True, help='保存完成后是否显示三维结果。')
+    parser.add_argument('--skip_existing', type=str2bool, default=False, help='是否跳过已有结果文件。')
+    args = parser.parse_args(argv)
     if args.root_path is None and any(
         p is None
         for p in (
@@ -60,11 +55,21 @@ def parse_args():
             args.result_3D_data_path,
         )
     ):
-        parser.error("Specify --root_path, or provide all input/output paths.")
+        parser.error("请指定 --root_path，或提供全部输入输出路径。")
     args.calib_path = args.calib_path or args.root_path / "calib"
     args.result_2D_data_path = args.result_2D_data_path or args.root_path / "camera results" / "2D"
     args.result_3D_data_path = args.result_3D_data_path or args.root_path / "camera results" / "3D"
     return args
+
+
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if str(v).lower() in ("yes", "true", "t", "1", "y"):
+        return True
+    if str(v).lower() in ("no", "false", "f", "0", "n"):
+        return False
+    raise argparse.ArgumentTypeError("请输入有效布尔值，例如 true 或 false。")
 
 
 ''' ray utils '''

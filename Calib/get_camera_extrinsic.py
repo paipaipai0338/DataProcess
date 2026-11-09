@@ -19,6 +19,23 @@ from Calib.chessboard_detection_helper import (
     make_rotations_and_flips,
 )
 
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description='根据多相机棋盘格图像估计相机外参。',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument('--data_path', type=Path, default=Path('F:\\20261008\\data_collection'), help='采集数据目录，可指定单个采集组或包含多个组的父目录。')
+    parser.add_argument('--save_path', type=Path, default=Path('F:\\20261008\\calib_verified'), help='新外参输出目录，不覆盖已有 calib。')
+    parser.add_argument('--intrinsic_path', type=Path, default=None, help='已有相机内参目录；未指定时使用 data_path 的父目录下的 calib。')
+    parser.add_argument('--reference_cam', type=str, default='A', help='外参统一到的参考相机编号。')
+    parser.add_argument('--selected_groups', type=int, default=5, help='只使用排序后的前 N 个采集组；省略或设为 0 时使用前 5 组。')
+    parser.add_argument('--target_valid_frames_per_group_cam', type=int, default=2, help='每个 group、每个相机最多使用的有效棋盘格帧数。')
+    parser.add_argument('--reproj_rmse_threshold', type=float, default=0.5, help='单帧棋盘格 PnP 重投影 RMSE 阈值，超过则剔除。')
+    args = parser.parse_args(argv)
+    return args
+
+
 ROWS, COLS = 24, 24
 SQUARE = 0.04
 
@@ -29,18 +46,6 @@ DRAW_COLORS = {
     "blue": (255, 0, 0),
 }
 
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="根据多相机棋盘格图像估计相机外参。")
-    parser.add_argument('--data_path', type=Path, default=Path(r'F:\20261008\data_collection'))
-    parser.add_argument('--save_path', type=Path, default=Path(r'F:\20261008\calib_verified'), help="新外参输出目录，不覆盖已有 calib。")
-    parser.add_argument('--intrinsic_path', type=Path, default=None, help='Existing intrinsic directory; defaults to data_path.parent/calib.')
-    parser.add_argument('--reference_cam', type=str, default="A", help="外参统一到的参考相机编号。")
-    parser.add_argument('--selected_groups', type=int, default=5, help="只使用前 N 个 group 进行外参估计；不填则使用全部 group。")
-    parser.add_argument('--target_valid_frames_per_group_cam', type=int, default=2, help="每个 group、每个相机最多使用的有效棋盘格帧数。")
-    parser.add_argument('--reproj_rmse_threshold', type=float, default=0.5, help="单帧棋盘格 PnP 重投影 RMSE 阈值，超过则剔除。")
-    args = parser.parse_args()
-    return args
 
 def natural_group_sort_key(group_name):
     match = re.search(r"(\d+)$", str(group_name))

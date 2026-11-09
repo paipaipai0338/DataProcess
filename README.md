@@ -33,7 +33,9 @@
 - 提前将本次采集对应的八台相机内参复制到 `calib/`。
 - 使用已配置依赖的 Python 环境；主要依赖包括 NumPy、SciPy、OpenCV、Matplotlib、tqdm、Open3D，二维检测还需要 PyTorch、MMDetection、MMPose 和 MMEngine。交互显示需可用的图形环境，部分脚本使用 Qt5Agg。
 - 二维检测所需的 RTMDet、ViTPose 配置与权重放在 `Img2Keypoint/2D_KeyPoints_helper/`，文件名以 `pipeline.py` 为准。
-- 以下命令均在项目根目录运行，将示例中的 `F:\20261028` 替换为实际日期目录。各脚本内置的默认路径并不一致，运行时应显式指定路径；没有命令行参数的脚本需修改代码中的配置。
+- 以下命令均在项目根目录运行，将示例中的 `F:\20261028` 替换为实际日期目录。各脚本内置的默认路径并不一致，运行时应显式指定路径。
+- 所有运行入口均将 `parse_args(argv=None)` 放在导入之后、其他函数之前。每个参数都显式设置 `default` 和中文 `help`；运行 `python -m <模块名> --help` 可查看参数说明及默认值。默认值为 `None` 的可选路径按对应帮助说明推导。
+- 新增的可视化布尔参数使用成对开关，例如 `--select_flag` 启用人体区域筛选，`--no-select_flag` 关闭；时序后处理可用 `--no-show` 关闭对比窗口。已有 `--skip_existing true|false` 等参数保持原有用法。
 
 ## 1. 相机外参获取
 
@@ -74,14 +76,14 @@ python "Calib/check_in&ex.py" --data_path "F:\20261028\data_collection\group_005
 
 入口：[Calib/get_R_t_between_radar_cam.py](Calib/get_R_t_between_radar_cam.py)。通过多相机重建角反射器位置，再与雷达检测点配准，求相机参考坐标系到雷达坐标系的变换。
 
-运行前修改 `main()` 中的配置：
+通过命令行参数配置：
 
-- `root_path`：包含角反射器的采集组；选择图像和雷达均能清楚观测角反的组。
-- `radar_selected`：分别设为 `low`、`high` 各运行一次，高低位雷达使用同一采集组。
-- 根据实际安装位置和检测效果，调整 `radar_cfar_params`、空间 ROI 和 `distance_threshold`。当前脚本选取倒数第 10 个 `.bin` 文件，组内应有足够帧数。
+- `--root_path`：包含角反射器的采集组；选择图像和雷达均能清楚观测角反的组。可用 `--calib_path` 指定标定目录。
+- `--radar_selected`：分别设为 `low`、`high` 各运行一次，高低位雷达使用同一采集组。
+- 根据实际安装位置和检测效果，调整 `--ref_range`、`--ref_velocity`、`--guard_range`、`--guard_velocity`、`--alpha`、`--mode`、`--roi_x`、`--roi_z` 和 `--distance_threshold`。默认 `--frame_index -10` 选取倒数第 10 个 `.bin` 文件，组内应有足够帧数。
 
 ```powershell
-python -m Calib.get_R_t_between_radar_cam
+python -m Calib.get_R_t_between_radar_cam --root_path "F:\20261028\data_collection\group_012" --radar_selected high
 ```
 
 标注时按角反的实际位置编号，在图像上依次点击；不可见的角反点击 `missing`，完成后点击 `save`。当前预期标注 4 个角反，八台相机之间必须保持编号一致。
@@ -130,15 +132,15 @@ python -m Img2Keypoint.batch_reconstruct_postprocess --root_path "F:\20261028\da
 
 ## 6. 多传感器结果检查
 
-入口：[Vis/display_sensor_results.py](Vis/display_sensor_results.py)。修改 `main()` 中的 `root_path`，并按本次数据配置 `vis_data`、`calib_flag`、`select_flag` 等选项。
+入口：[Vis/display_sensor_results.py](Vis/display_sensor_results.py)。通过 `--root_path`、`--vis_data`、`--calib_flag`、`--select_flag` 等参数配置数据路径与显示选项。
 
 ```powershell
-python -m Vis.display_sensor_results
+python -m Vis.display_sensor_results --root_path "F:\20261028\data_collection\group_011" --vis_data radar_high_pc gt --base_source radar_high_pc
 ```
 
 当前默认显示高位雷达已有点云和 `camera results/smoothed 3D/` 中的 GT，以高位雷达点云为时间基准，允许 50 ms 匹配误差。更换显示源时需同步检查 `base_source` 是否可用。
 
-启用标定或人体区域筛选时，当前代码会加载高低位雷达外参以及 `extrinsic_realsense_to_radar.npz`；前面的角反标定步骤只生成高低位雷达外参，RealSense 外参需另行准备。`select_flag=True` 会依照 GT 人体包围盒筛选点云，检查完整场景时可将其关闭。
+启用标定或人体区域筛选时，当前代码会加载高低位雷达外参以及 `extrinsic_realsense_to_radar.npz`；前面的角反标定步骤只生成高低位雷达外参，RealSense 外参需另行准备。默认依照 GT 人体包围盒筛选点云，检查完整场景时可用 `--no-select_flag` 关闭。
 
 重点检查：
 
@@ -146,7 +148,7 @@ python -m Vis.display_sensor_results
 - 雷达点云是否位于人体附近，判断相机与雷达外参是否正确。
 - 人体运动时骨架与点云是否同步，判断时间匹配是否合适。
 
-如需导出视频，可参考 [Vis/display_sensor_results_mp4.py](Vis/display_sensor_results_mp4.py)，该脚本需单独配置数据路径和显示选项。
+如需导出视频，使用 [Vis/display_sensor_results_mp4.py](Vis/display_sensor_results_mp4.py)，通过 `--root_path`、`--vis_data`、`--output_video_path` 和 `--video_fps` 指定数据与输出。默认最多导出 1000 帧，实际匹配帧数不足时自动取实际数量，可用 `--max_frames` 调整上限。
 
 ## 7. 三维结果重投影核算（debug）
 
@@ -177,6 +179,7 @@ python -m Img2Keypoint.check_results --mode debug --root_path "F:\20261028\data_
 - 利用相机外参的逆变换与内参、畸变参数投影，误差为对应关节点的二维欧氏距离，单位为像素；三维点必须有限且位于相机前方。
 - 每台相机独立进行三维人到二维检测人的一对一匹配，同一个二维人不会重复分配。debug 不设置像素误差上限，高误差匹配也保留；人数不足或有效点不足时允许无匹配。
 - 保存的三维结果不含原始二维人物编号，因此这里是事后重新匹配，不能作为原重建对应关系的还原。raw 和 smoothed 独立匹配，人物编号只是各自该帧数组的索引，不保证两者或跨帧身份一致。
+- `nearest_*` 是最近候选的距离，候选可能属于另一个人，不能直接当作该骨架的真实重投影误差。没有可靠对应的视角不应强行并入平均值；采集记录的人数也需与实际画面核实。
 - 缺失值记为 `nan`，不记为 0。每相机误差是有效关节点距离的平均；`mean_error_px` 对已匹配相机的均值再取等权平均，`max_error_px` 是这些相机均值的最大值。高误差关节点不预先剔除。
 - `valid_camera_count` 是具备足够有效点且分配到二维人的相机数量，**不表示低误差相机数**。不能仅凭平均值小就认定骨架有效，还需同时检查相机数量与匹配冲突。
 
@@ -202,5 +205,3 @@ CSV 保存为 `<output_dir>/reprojection_errors.csv`，使用 UTF-8 BOM 编码�
 - `Q`：关闭窗口。
 
 默认报告目录已加入 `.gitignore`。重新导出会覆盖同名 CSV；需要保留不同核算配置的报告时，请指定不同的 `--output_dir`。
-
-验证命令：`python -m unittest Img2Keypoint.test_check_results`，覆盖投影变换与畸变、人物匹配冲突、高误差保留、缺失数据、双来源 CSV 和查看器导航。

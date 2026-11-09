@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import os
 import pickle
 import sys
@@ -22,6 +23,48 @@ from RadarProcess.utils import get_corner_data, get_pc_data
 from Img2Keypoint.utils import COCO17_SKELETON
 from Calib.utils import apply_transform
 
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description='交互检查多传感器点云与人体骨架对齐结果。',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument('--root_path', type=Path, default=Path('\\\\121.48.164.159\\Huawei\\20260708\\data_collection\\group_027'), help='待查看的采集组目录。')
+    parser.add_argument('--calib_path', type=Path, default=None, help='标定目录；未指定时使用采集组上两级目录下的 calib。')
+    parser.add_argument('--gt_path', type=Path, default=None, help='三维骨架目录；未指定时使用采集组下的 camera results/smoothed 3D。')
+    parser.add_argument('--vis_data', nargs='+', choices=('radar_low_bin', 'radar_high_bin', 'radar_low_pc', 'radar_high_pc', 'realsense', 'lidar', 'gt'), default=['radar_high_pc', 'gt'], help='需要显示的传感器及骨架数据源。')
+    parser.add_argument('--base_source', choices=('radar_low_bin', 'radar_high_bin', 'radar_low_pc', 'radar_high_pc', 'realsense', 'lidar', 'gt'), default='radar_high_pc', help='时间同步基准数据源，必须包含在本次使用的数据源中。')
+    parser.add_argument('--max_delta_sec', type=float, default=0.05, help='传感器时间匹配的最大误差，单位为秒。')
+    parser.add_argument('--calib_flag', action=argparse.BooleanOptionalAction, default=True, help='是否将传感器数据变换到统一坐标系。')
+    parser.add_argument('--select_flag', action=argparse.BooleanOptionalAction, default=True, help='是否按 GT 人体包围盒筛选点云。')
+    parser.add_argument('--select_threshold', type=float, default=0.3, help='人体包围盒向外扩展的距离，单位为米。')
+    parser.add_argument('--continuous_play_flag', action=argparse.BooleanOptionalAction, default=True, help='是否连续播放；关闭后逐帧查看。')
+    parser.add_argument('--play_interval_sec', type=float, default=0.1, help='播放每帧的间隔，单位为秒。')
+    parser.add_argument('--vis_scene_center', type=float, nargs=3, default=[0.0, 0.0, 0.0], help='三维显示区域的中心坐标，单位为米。')
+    parser.add_argument('--vis_scene_size', type=float, default=40.0, help='三维显示区域的边长，单位为米。')
+    parser.add_argument('--max_frames', type=int, default=None, help='最多处理的帧数；未指定上限时处理全部匹配帧。')
+    parser.add_argument('--radar_low_ref_range', type=int, default=8, help='距离维参考单元数。')
+    parser.add_argument('--radar_low_ref_velocity', type=int, default=8, help='速度维参考单元数。')
+    parser.add_argument('--radar_low_guard_range', type=int, default=4, help='距离维保护单元数。')
+    parser.add_argument('--radar_low_guard_velocity', type=int, default=4, help='速度维保护单元数。')
+    parser.add_argument('--radar_low_alpha', type=float, default=10.0, help='CFAR 检测门限倍率。')
+    parser.add_argument('--radar_low_mode', type=str, choices=('ca', 'so', 'go'), default='ca', help='CFAR 检测模式。')
+    parser.add_argument('--radar_high_ref_range', type=int, default=9, help='距离维参考单元数。')
+    parser.add_argument('--radar_high_ref_velocity', type=int, default=8, help='速度维参考单元数。')
+    parser.add_argument('--radar_high_guard_range', type=int, default=8, help='距离维保护单元数。')
+    parser.add_argument('--radar_high_guard_velocity', type=int, default=4, help='速度维保护单元数。')
+    parser.add_argument('--radar_high_alpha', type=float, default=10.0, help='CFAR 检测门限倍率。')
+    parser.add_argument('--radar_high_mode', type=str, choices=('ca', 'so', 'go'), default='ca', help='CFAR 检测模式。')
+    args = parser.parse_args(argv)
+    if args.max_frames is not None and args.max_frames < 1:
+        parser.error("--max_frames 必须为正整数。")
+    if args.max_delta_sec < 0 or args.play_interval_sec <= 0:
+        parser.error("同步误差必须非负，播放间隔必须为正数。")
+    if args.base_source not in args.vis_data and not (args.base_source == "gt" and args.select_flag):
+        parser.error("--base_source 必须是本次启用的数据源。")
+    args.calib_path = args.calib_path or args.root_path.parent.parent / "calib"
+    args.gt_path = args.gt_path or args.root_path / "camera results" / "smoothed 3D"
+    return args
 
 if TYPE_CHECKING:
     import torch
@@ -470,21 +513,17 @@ class _SensorPlayback:
 
 
 def main():
-    root_path = Path(r'\\121.48.164.159\Huawei\20261026_pm\data_collection\group_011')
-    calib_path = root_path.parent.parent / 'calib'
-    calib_flag = True
-    select_flag = True
-    select_threshold = 0.3  # high 原生坐标系中包围盒向外扩展的距离（米）
-    continuous_play_flag = True
-    play_interval_sec = 0.1
-    vis_scene_center = [0, 0, 0]
-    vis_scene_size = 40
-    # vis_data = ['radar_low_bin', 'radar_high_bin', 'radar_low_pc', 'radar_high_pc', 'realsense', 'lidar', 'gt']
-    # vis_data = ['radar_low_bin', 'radar_high_bin', 'radar_low_pc', 'radar_high_pc', 'gt']
-    # vis_data = ['radar_low_bin', 'radar_high_bin', 'realsense', 'lidar']
-    # vis_data = ['radar_high_pc', 'gt', 'radar_high_bin']
-    vis_data = ['radar_high_pc', 'gt']
-
+    args = parse_args()
+    root_path = args.root_path
+    calib_path = args.calib_path
+    calib_flag = args.calib_flag
+    select_flag = args.select_flag
+    select_threshold = args.select_threshold
+    continuous_play_flag = args.continuous_play_flag
+    play_interval_sec = args.play_interval_sec
+    vis_scene_center = args.vis_scene_center
+    vis_scene_size = args.vis_scene_size
+    vis_data = args.vis_data
 
     if calib_flag or select_flag:
         extrinsic_img_to_radar_low = np.load(calib_path / 'extrinsic_img_to_radar_low.npz')
@@ -506,23 +545,9 @@ def main():
 
 
 
-    radar_low_cfar_params = {
-        "ref_range": 8,
-        "ref_velocity": 8,
-        "guard_range": 4,
-        "guard_velocity": 4,
-        "alpha": 10.0,
-        "mode": "ca",
-
-    }
-    radar_high_cfar_params = {
-        "ref_range": 9,
-        "ref_velocity": 8,
-        "guard_range": 8,
-        "guard_velocity": 4,
-        "alpha": 10.0,
-        "mode": "ca",
-    }
+    cfar_keys = ("ref_range", "ref_velocity", "guard_range", "guard_velocity", "alpha", "mode")
+    radar_low_cfar_params = {key: getattr(args, "radar_low_" + key) for key in cfar_keys}
+    radar_high_cfar_params = {key: getattr(args, "radar_high_" + key) for key in cfar_keys}
 
     radar_low_path = root_path / 'dpct低位机'
     radar_low_bin_path = radar_low_path / 'Bin'
@@ -536,7 +561,7 @@ def main():
 
     realsense_path = root_path / 'realsense' / 'aligned_depth'
 
-    gt_path = root_path / 'camera results' / 'smoothed 3D'
+    gt_path = args.gt_path
 
     sensors = {
         'lidar': lidar_path if 'lidar' in vis_data else None,
@@ -562,17 +587,19 @@ def main():
     # 执行对齐
     result = align_multi_sensor_files(
         sources=sensors,
-        max_delta_sec=0.05,
+        max_delta_sec=args.max_delta_sec,
         one_to_one=True,
-        base_source='radar_high_pc',  # 可选，不指定则自动选择
+        base_source=args.base_source,  # 可选，不指定则自动选择
         suffix_map=suffix_map,
         # time_offsets_sec={
         #     "gt": -0.2
         # }
     )
 
-    base_files_matched = result.get('radar_high_pc') or next((files for files in result.values() if files), [])
+    base_files_matched = result.get(args.base_source) or next((files for files in result.values() if files), [])
     frames = len(base_files_matched)
+    if args.max_frames is not None:
+        frames = min(frames, args.max_frames)
 
     def get_matched_files(name):
         return result.get(name) or [None] * frames

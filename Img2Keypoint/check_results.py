@@ -28,6 +28,42 @@ from Img2Keypoint.utils import (  # noqa: E402
 )
 from TimeProcess.utils import timestamp_to_ms  # noqa: E402
 
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description='将原始和平滑后三维人体骨架重投影到八台相机并核算误差。',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument('--mode', choices=('debug',), default='debug', help='运行模式，当前仅支持 debug 检查。')
+    parser.add_argument('--root_path', '--data_path', dest='root_path', type=Path, default=Path('\\\\121.48.164.159\\Huawei\\20261028\\data_collection'), help='采集数据根目录，可指定单个采集组或包含多个组的父目录。')
+    parser.add_argument('--groups', nargs='*', default=None, help='需要处理的采集组名称；未指定时处理全部组。')
+    parser.add_argument('--calib_path', type=Path, default=None, help='标定文件目录；未指定时按数据目录推导。')
+    parser.add_argument('--reference_cam', choices=CAMS, default='A', help='三维坐标使用的参考相机编号。')
+    parser.add_argument('--sources', nargs='+', choices=('raw', 'smoothed'), default=['raw', 'smoothed'], help='需要核算的三维结果来源：原始结果、平滑结果或两者。')
+    parser.add_argument('--result_2D_data_path', '--result_2d_data_path', dest='result_2d_path', type=Path, default=None, help='二维关键点目录；默认使用组内 camera results/2D，多组显式指定时按组名查找子目录。')
+    parser.add_argument('--result_3D_data_path', '--result_3d_data_path', dest='raw_path', type=Path, default=None, help='原始三维骨架目录；默认使用组内 camera results/3D，多组显式指定时按组名查找子目录。')
+    parser.add_argument('--smooth_3D_data_path', '--smooth_3d_data_path', dest='smoothed_path', type=Path, default=None, help='平滑后三维骨架目录；默认使用组内 camera results/smoothed 3D，多组显式指定时按组名查找子目录。')
+    parser.add_argument('--result_2d_subdir', default='camera results/2D', help='各采集组内二维结果的相对子目录。')
+    parser.add_argument('--result_3d_subdir', default='camera results/3D', help='各采集组内原始三维结果的相对子目录。')
+    parser.add_argument('--smooth_3d_subdir', default='camera results/smoothed 3D', help='各采集组内平滑后三维结果的相对子目录。')
+    parser.add_argument('--output_dir', type=Path, default=PROJECT_ROOT / 'check_results_debug', help='重投影检查报告与截图的输出目录。')
+    parser.add_argument('--score_threshold', type=float, default=0.5, help='参与核算的二维关节点最低置信度。')
+    parser.add_argument('--min_valid_joints', type=int, default=5, help='参与处理所需的最少有效关节点数。')
+    parser.add_argument('--sync_error_ms', type=int, default=25, help='多相机时间同步的最大误差，单位为毫秒。')
+    parser.add_argument('--frames', nargs='+', default=None, help='指定需要检查的三维帧文件名，不含扩展名。')
+    parser.add_argument('--max_frames', type=int, default=None, help='每组最多处理的帧数；未指定时处理全部帧。')
+    parser.add_argument('--no_view', action='store_true', default=False, help='是否仅导出 CSV 而不打开查看窗口。')
+    args = parser.parse_args(argv)
+    if not 0 <= args.score_threshold <= 1:
+        parser.error("--score_threshold 必须在 0 到 1 之间。")
+    if not 1 <= args.min_valid_joints <= 17:
+        parser.error("--min_valid_joints 必须在 1 到 17 之间。")
+    if args.sync_error_ms < 0 or (args.max_frames is not None and args.max_frames < 1):
+        parser.error("--sync_error_ms 必须非负，--max_frames 必须为正数。")
+    args.sources = list(dict.fromkeys(args.sources))
+    return args
+
+
 CAMS = tuple("ABCDEFGH")
 CAM_FIELDS = (
     "image_frame", "error_px", "person_2d_id", "valid_joint_count", "status",
@@ -39,44 +75,6 @@ CSV_FIELDS = (
     "max_error_px", "valid_camera_count", "nearest_mean_error_px",
     "nearest_valid_camera_count", "score_threshold", "min_valid_joints", "sync_error_ms",
 ) + tuple(f"cam_{cam}_{field}" for cam in CAMS for field in CAM_FIELDS)
-
-
-def parse_args(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("debug",), default="debug")
-    parser.add_argument("--root_path", "--data_path", dest="root_path", type=Path,
-                        default=Path(r"F:\20261028\data_collection"))
-    parser.add_argument("--groups", nargs="*", help="Group folder names; default: all groups.")
-    parser.add_argument("--calib_path", type=Path)
-    parser.add_argument("--reference_cam", choices=CAMS, default="A")
-    parser.add_argument("--sources", nargs="+", choices=("raw", "smoothed"),
-                        default=["raw", "smoothed"])
-    parser.add_argument("--result_2D_data_path", "--result_2d_data_path",
-                        dest="result_2d_path", type=Path)
-    parser.add_argument("--result_3D_data_path", "--result_3d_data_path",
-                        dest="raw_path", type=Path)
-    parser.add_argument("--smooth_3D_data_path", "--smooth_3d_data_path",
-                        dest="smoothed_path", type=Path)
-    parser.add_argument("--result_2d_subdir", default="camera results/2D")
-    parser.add_argument("--result_3d_subdir", default="camera results/3D")
-    parser.add_argument("--smooth_3d_subdir", default="camera results/smoothed 3D")
-    parser.add_argument("--output_dir", type=Path,
-                        default=PROJECT_ROOT / "check_results_debug")
-    parser.add_argument("--score_threshold", type=float, default=0.5)
-    parser.add_argument("--min_valid_joints", type=int, default=5)
-    parser.add_argument("--sync_error_ms", type=int, default=25)
-    parser.add_argument("--frames", nargs="+", help="Saved 3D filename stems to inspect.")
-    parser.add_argument("--max_frames", type=int, help="Limit frames per group, for a quick check.")
-    parser.add_argument("--no_view", action="store_true", help="Export CSV without opening a viewer.")
-    args = parser.parse_args(argv)
-    if not 0 <= args.score_threshold <= 1:
-        parser.error("--score_threshold must be between 0 and 1")
-    if not 1 <= args.min_valid_joints <= 17:
-        parser.error("--min_valid_joints must be between 1 and 17")
-    if args.sync_error_ms < 0 or (args.max_frames is not None and args.max_frames < 1):
-        parser.error("--sync_error_ms must be nonnegative and --max_frames must be positive")
-    args.sources = list(dict.fromkeys(args.sources))
-    return args
 
 
 def frame_name(group):
